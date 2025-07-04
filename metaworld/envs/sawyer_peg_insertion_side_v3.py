@@ -38,8 +38,8 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         camera_name: str | None = None,
         camera_id: int | None = None,
         reward_function_version: str = "v2",
-        height: int = 480,
-        width: int = 480,
+        height: int = 1920,
+        width: int = 1080,
     ) -> None:
         hand_init_pos = (0, 0.6, 0.2)
 
@@ -70,8 +70,6 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
 
         self.obj_init_pos = self.init_config["obj_init_pos"]
         self.hand_init_pos = self.init_config["hand_init_pos"]
-
-        self.hand_init_pos = np.array(hand_init_pos)
 
         self._random_reset_space = Box(
             np.hstack((obj_low, goal_low)),
