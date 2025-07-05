@@ -127,6 +127,11 @@ class SawyerMocapBase(mjenv_gym):
             state["mjb"],
             frame_skip=self.frame_skip,
             observation_space=self.sawyer_observation_space,
+            render_mode=self.render_mode,
+            camera_name=self.camera_name,
+            camera_id=self.camera_id,
+            width=self.width,
+            height=self.height,
         )
         self.set_env_state(state["mocap"])
 
@@ -262,7 +267,6 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
 
         EzPickle.__init__(
             self,
-            self.model_name,
             frame_skip,
             hand_low,
             hand_high,
@@ -270,6 +274,12 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             mocap_high,
             action_scale,
             action_rot_scale,
+            render_mode,
+            camera_id,
+            camera_name,
+            reward_function_version,
+            width,
+            height,
         )
 
     def seed(self, seed: int) -> list[int]:

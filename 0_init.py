@@ -3,11 +3,13 @@ import metaworld
 import time
 import random
 
-
-ml1 = metaworld.MT1("peg-insert-side-v3", seed=42)
-env = ml1.train_classes['peg-insert-side-v3'](render_mode='human', camera_name='behindGripper')
-task = random.choice(ml1.train_tasks)
-env.set_task(task)
+ml1 = metaworld.ML1('peg-insert-side-v3')
+env = metaworld.make_mt_envs(
+    'peg-insert-side-v3',
+    render_mode='human',
+    width=1080,
+    height=1920
+)
 
 # 5. 实例化专家策略
 # 注意：策略类的名称也可能随着版本更新
@@ -19,10 +21,14 @@ obs, info = env.reset()
 # 6. 循环执行直到任务成功
 done = False
 count = 0
+mujoco_env = env.unwrapped
+# mujoco_env.mujoco_renderer.viewer.cam.azimuth = 135
+mujoco_env.mujoco_renderer.viewer.cam.fixedcamid = 2
+
 while count < 500 and not done:
     # 渲染环境
     env.render()
-    
+
     # 根据当前观测值获取动作
     action = policy.get_action(obs)
     

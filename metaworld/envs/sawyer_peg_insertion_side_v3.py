@@ -36,7 +36,7 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         self,
         render_mode: RenderMode | None = None,
         camera_name: str | None = None,
-        camera_id: int | None = None,
+        camera_id: int = 4,
         reward_function_version: str = "v2",
         height: int = 1920,
         width: int = 1080,
