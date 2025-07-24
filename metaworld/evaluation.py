@@ -6,7 +6,7 @@ import gymnasium as gym
 import numpy as np
 import numpy.typing as npt
 
-from metaworld.env_dict import ALL_V3_ENVIRONMENTS
+from env_dict import ALL_V3_ENVIRONMENTS
 
 
 class Agent(Protocol):

@@ -205,66 +205,6 @@ class MT1(Benchmark):
 
         self._test_tasks = []
 
-
-class MT10(Benchmark):
-    """
-    The MT10 benchmark.
-    Contains 10 tasks in its train set.
-    Has an empty test set.
-    """
-
-    def __init__(self, seed=None):
-        super().__init__()
-        self._train_classes = _env_dict.MT10_V3
-        self._test_classes = OrderedDict()
-        train_kwargs = _env_dict.MT10_V3_ARGS_KWARGS
-        self._train_tasks = _make_tasks(
-            self._train_classes, train_kwargs, _MT_OVERRIDE, seed=seed
-        )
-
-        self._test_tasks = []
-        self._test_classes = []
-
-
-class MT25(Benchmark):
-    """
-    The MT25 benchmark.
-    Contains 25 tasks in its train set.
-    Has an empty test set.
-    """
-
-    def __init__(self, seed=None):
-        super().__init__()
-        self._train_classes = _env_dict.MT25_V3
-        train_kwargs = _env_dict.MT25_V3_ARGS_KWARGS
-        self._train_tasks = _make_tasks(
-            self._train_classes, train_kwargs, _MT_OVERRIDE, seed=seed
-        )
-
-        self._test_tasks = []
-        self._test_classes = []
-
-
-class MT50(Benchmark):
-    """
-    The MT50 benchmark.
-    Contains all (50) tasks in its train set.
-    Has an empty test set.
-    """
-
-    def __init__(self, seed=None):
-        super().__init__()
-        self._train_classes = _env_dict.MT50_V3
-        self._test_classes = OrderedDict()
-        train_kwargs = _env_dict.MT50_V3_ARGS_KWARGS
-        self._train_tasks = _make_tasks(
-            self._train_classes, train_kwargs, _MT_OVERRIDE, seed=seed
-        )
-
-        self._test_tasks = []
-        self._test_classes = []
-
-
 # ML Benchmarks
 
 
@@ -297,75 +237,6 @@ class ML1(Benchmark):
             _ML_OVERRIDE,
             seed=(seed + 1 if seed is not None else seed),
         )
-
-
-class ML10(Benchmark):
-    """
-    The ML10 benchmark.
-    Contains 10 tasks in its train set and 5 tasks in its test set.
-    The goal position is not part of the observation.
-    """
-
-    def __init__(self, seed=None):
-        super().__init__()
-        self._train_classes = _env_dict.ML10_V3["train"]
-        self._test_classes = _env_dict.ML10_V3["test"]
-        train_kwargs = _env_dict.ML10_ARGS_KWARGS["train"]
-
-        test_kwargs = _env_dict.ML10_ARGS_KWARGS["test"]
-        self._train_tasks = _make_tasks(
-            self._train_classes, train_kwargs, _ML_OVERRIDE, seed=seed
-        )
-
-        self._test_tasks = _make_tasks(
-            self._test_classes, test_kwargs, _ML_OVERRIDE, seed=seed
-        )
-
-
-class ML25(Benchmark):
-    """
-    The ML10 benchmark.
-    Contains 25 tasks in its train set and 5 tasks in its test set.
-    The goal position is not part of the observation.
-    """
-
-    def __init__(self, seed=None):
-        super().__init__()
-        self._train_classes = _env_dict.ML25_V3["train"]
-        self._test_classes = _env_dict.ML25_V3["test"]
-        train_kwargs = _env_dict.ML25_ARGS_KWARGS["train"]
-
-        test_kwargs = _env_dict.ML25_ARGS_KWARGS["test"]
-        self._train_tasks = _make_tasks(
-            self._train_classes, train_kwargs, _ML_OVERRIDE, seed=seed
-        )
-
-        self._test_tasks = _make_tasks(
-            self._test_classes, test_kwargs, _ML_OVERRIDE, seed=seed
-        )
-
-
-class ML45(Benchmark):
-    """
-    The ML45 benchmark.
-    Contains 45 tasks in its train set and 5 tasks in its test set (50 in total).
-    The goal position is not part of the observation.
-    """
-
-    def __init__(self, seed=None):
-        super().__init__()
-        self._train_classes = _env_dict.ML45_V3["train"]
-        self._test_classes = _env_dict.ML45_V3["test"]
-        train_kwargs = _env_dict.ML45_ARGS_KWARGS["train"]
-        test_kwargs = _env_dict.ML45_ARGS_KWARGS["test"]
-
-        self._train_tasks = _make_tasks(
-            self._train_classes, train_kwargs, _ML_OVERRIDE, seed=seed
-        )
-        self._test_tasks = _make_tasks(
-            self._test_classes, test_kwargs, _ML_OVERRIDE, seed=seed
-        )
-
 
 class CustomML(Benchmark):
     """
@@ -475,37 +346,6 @@ def make_mt_envs(
             seed=seed,
             num_tasks=num_tasks or 1,
             **kwargs,
-        )
-    elif name == "MT10" or name == "MT25" or name == "MT50":
-        benchmark = globals()[name](seed=seed)
-        vectorizer: type[gym.vector.VectorEnv] = getattr(
-            gym.vector, f"{vector_strategy.capitalize()}VectorEnv"
-        )
-        if name == "MT10":
-            default_num_tasks = 10
-        elif name == "MT25":
-            default_num_tasks = 25
-        else:
-            default_num_tasks = 50
-
-        return vectorizer(  # type: ignore
-            [
-                partial(
-                    _init_each_env,
-                    env_cls=env_cls,
-                    tasks=[
-                        task for task in benchmark.train_tasks if task.env_name == name
-                    ],
-                    seed=seed,
-                    env_id=env_id,
-                    num_tasks=num_tasks or default_num_tasks,
-                    **kwargs,
-                )
-                for env_id, (name, env_cls) in enumerate(
-                    benchmark.train_classes.items()
-                )
-            ],  # type: ignore
-            autoreset_mode=autoreset_mode,
         )
     else:
         raise ValueError(
@@ -704,40 +544,6 @@ def register_mw_envs() -> None:
         ),
         kwargs={},
     )
-
-    for mt_bench in ["MT10", "MT25", "MT50"]:
-        register(
-            id=f"Meta-World/{mt_bench}",
-            vector_entry_point=lambda _mt_bench=mt_bench, vector_strategy="sync", autoreset_mode=gym.vector.AutoresetMode.SAME_STEP, seed=None, use_one_hot=False, num_envs=None, **kwargs: _mt_bench_vector_entry_point(
-                _mt_bench,  # positional arguments
-                vector_strategy,
-                autoreset_mode,
-                seed,
-                use_one_hot,
-                num_envs,
-                **kwargs,
-            ),
-            kwargs={},
-        )
-
-    for ml_bench in ["ML10", "ML25", "ML45"]:
-        for split in ["train", "test"]:
-            register(
-                id=f"Meta-World/{ml_bench}-{split}",
-                vector_entry_point=lambda _ml_bench=ml_bench, _split=split, vector_strategy="sync", autoreset_mode=gym.vector.AutoresetMode.SAME_STEP, total_tasks_per_cls=None, seed=None, meta_batch_size=20, num_envs=None, **kwargs: _ml_bench_vector_entry_point(
-                    _ml_bench,
-                    _split,
-                    vector_strategy,
-                    autoreset_mode,
-                    total_tasks_per_cls,
-                    seed,
-                    meta_batch_size,
-                    num_envs,
-                    **kwargs,
-                ),
-                kwargs={},
-            )
-
     def _custom_mt_vector_entry_point(
         vector_strategy: str,
         envs_list: list[str],

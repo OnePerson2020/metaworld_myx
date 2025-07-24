@@ -51,7 +51,7 @@ class SawyerPegInsertionSideV3Policy(Policy):
         elif np.linalg.norm(pos_peg[1:] - pos_hole[1:]) > 0.03:
             return pos_hole + np.array([0.4, 0.0, 0.0])
         else:
-            return pos_hole
+            return pos_hole - np.array([0.8, 0.0, 0.0])
 
     @staticmethod
     def _grab_effort(o_d: dict[str, npt.NDArray[np.float64]]) -> float:

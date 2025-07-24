@@ -6,8 +6,7 @@ from pathlib import Path
 
 _CURRENT_FILE_DIR = Path(__file__).parent.absolute()
 
-ENV_ASSET_DIR_V3 = _CURRENT_FILE_DIR / "assets"
-
+ENV_ASSET_DIR_V3 = _CURRENT_FILE_DIR / 'xml'
 
 def full_V3_path_for(file_name: str) -> str:
     """Retrieves the full, absolute path for a given V3 asset

@@ -12,8 +12,9 @@ from typing import Sequence, Union
 import numpy as np
 from typing_extensions import TypeAlias
 
-from metaworld import envs
+# from metaworld import envs
 from metaworld.sawyer_xyz_env import SawyerXYZEnv
+from metaworld.sawyer_peg_insertion_side_v3 import SawyerPegInsertionSideEnvV3
 
 # Utils
 
@@ -24,56 +25,7 @@ EnvArgsKwargsDict: TypeAlias = (
 )
 
 ENV_CLS_MAP = {
-    "assembly-v3": envs.SawyerNutAssemblyEnvV3,
-    "basketball-v3": envs.SawyerBasketballEnvV3,
-    "bin-picking-v3": envs.SawyerBinPickingEnvV3,
-    "box-close-v3": envs.SawyerBoxCloseEnvV3,
-    "button-press-topdown-v3": envs.SawyerButtonPressTopdownEnvV3,
-    "button-press-topdown-wall-v3": envs.SawyerButtonPressTopdownWallEnvV3,
-    "button-press-v3": envs.SawyerButtonPressEnvV3,
-    "button-press-wall-v3": envs.SawyerButtonPressWallEnvV3,
-    "coffee-button-v3": envs.SawyerCoffeeButtonEnvV3,
-    "coffee-pull-v3": envs.SawyerCoffeePullEnvV3,
-    "coffee-push-v3": envs.SawyerCoffeePushEnvV3,
-    "dial-turn-v3": envs.SawyerDialTurnEnvV3,
-    "disassemble-v3": envs.SawyerNutDisassembleEnvV3,
-    "door-close-v3": envs.SawyerDoorCloseEnvV3,
-    "door-lock-v3": envs.SawyerDoorLockEnvV3,
-    "door-open-v3": envs.SawyerDoorEnvV3,
-    "door-unlock-v3": envs.SawyerDoorUnlockEnvV3,
-    "hand-insert-v3": envs.SawyerHandInsertEnvV3,
-    "drawer-close-v3": envs.SawyerDrawerCloseEnvV3,
-    "drawer-open-v3": envs.SawyerDrawerOpenEnvV3,
-    "faucet-open-v3": envs.SawyerFaucetOpenEnvV3,
-    "faucet-close-v3": envs.SawyerFaucetCloseEnvV3,
-    "hammer-v3": envs.SawyerHammerEnvV3,
-    "handle-press-side-v3": envs.SawyerHandlePressSideEnvV3,
-    "handle-press-v3": envs.SawyerHandlePressEnvV3,
-    "handle-pull-side-v3": envs.SawyerHandlePullSideEnvV3,
-    "handle-pull-v3": envs.SawyerHandlePullEnvV3,
-    "lever-pull-v3": envs.SawyerLeverPullEnvV3,
-    "peg-insert-side-v3": envs.SawyerPegInsertionSideEnvV3,
-    "pick-place-wall-v3": envs.SawyerPickPlaceWallEnvV3,
-    "pick-out-of-hole-v3": envs.SawyerPickOutOfHoleEnvV3,
-    "reach-v3": envs.SawyerReachEnvV3,
-    "push-back-v3": envs.SawyerPushBackEnvV3,
-    "push-v3": envs.SawyerPushEnvV3,
-    "pick-place-v3": envs.SawyerPickPlaceEnvV3,
-    "plate-slide-v3": envs.SawyerPlateSlideEnvV3,
-    "plate-slide-side-v3": envs.SawyerPlateSlideSideEnvV3,
-    "plate-slide-back-v3": envs.SawyerPlateSlideBackEnvV3,
-    "plate-slide-back-side-v3": envs.SawyerPlateSlideBackSideEnvV3,
-    "peg-unplug-side-v3": envs.SawyerPegUnplugSideEnvV3,
-    "soccer-v3": envs.SawyerSoccerEnvV3,
-    "stick-push-v3": envs.SawyerStickPushEnvV3,
-    "stick-pull-v3": envs.SawyerStickPullEnvV3,
-    "push-wall-v3": envs.SawyerPushWallEnvV3,
-    "reach-wall-v3": envs.SawyerReachWallEnvV3,
-    "shelf-place-v3": envs.SawyerShelfPlaceEnvV3,
-    "sweep-into-v3": envs.SawyerSweepIntoGoalEnvV3,
-    "sweep-v3": envs.SawyerSweepEnvV3,
-    "window-open-v3": envs.SawyerWindowOpenEnvV3,
-    "window-close-v3": envs.SawyerWindowCloseEnvV3,
+    "peg-insert-side-v3": SawyerPegInsertionSideEnvV3,
 }
 
 
@@ -218,56 +170,7 @@ def _create_observable_goal_envs(all_envs: EnvDict) -> EnvDict:
 
 ALL_V3_ENVIRONMENTS = _get_env_dict(
     [
-        "assembly-v3",
-        "basketball-v3",
-        "bin-picking-v3",
-        "box-close-v3",
-        "button-press-topdown-v3",
-        "button-press-topdown-wall-v3",
-        "button-press-v3",
-        "button-press-wall-v3",
-        "coffee-button-v3",
-        "coffee-pull-v3",
-        "coffee-push-v3",
-        "dial-turn-v3",
-        "disassemble-v3",
-        "door-close-v3",
-        "door-lock-v3",
-        "door-open-v3",
-        "door-unlock-v3",
-        "hand-insert-v3",
-        "drawer-close-v3",
-        "drawer-open-v3",
-        "faucet-open-v3",
-        "faucet-close-v3",
-        "hammer-v3",
-        "handle-press-side-v3",
-        "handle-press-v3",
-        "handle-pull-side-v3",
-        "handle-pull-v3",
-        "lever-pull-v3",
-        "pick-place-wall-v3",
-        "pick-out-of-hole-v3",
-        "pick-place-v3",
-        "plate-slide-v3",
-        "plate-slide-side-v3",
-        "plate-slide-back-v3",
-        "plate-slide-back-side-v3",
         "peg-insert-side-v3",
-        "peg-unplug-side-v3",
-        "soccer-v3",
-        "stick-push-v3",
-        "stick-pull-v3",
-        "push-v3",
-        "push-wall-v3",
-        "push-back-v3",
-        "reach-v3",
-        "reach-wall-v3",
-        "shelf-place-v3",
-        "sweep-into-v3",
-        "sweep-v3",
-        "window-open-v3",
-        "window-close-v3",
     ]
 )
 
@@ -275,193 +178,9 @@ ALL_V3_ENVIRONMENTS = _get_env_dict(
 ALL_V3_ENVIRONMENTS_GOAL_HIDDEN = _create_hidden_goal_envs(ALL_V3_ENVIRONMENTS)
 ALL_V3_ENVIRONMENTS_GOAL_OBSERVABLE = _create_observable_goal_envs(ALL_V3_ENVIRONMENTS)
 
-# MT Dicts
-
-MT10_V3 = _get_env_dict(
-    [
-        "reach-v3",
-        "push-v3",
-        "pick-place-v3",
-        "door-open-v3",
-        "drawer-open-v3",
-        "drawer-close-v3",
-        "button-press-topdown-v3",
-        "peg-insert-side-v3",
-        "window-open-v3",
-        "window-close-v3",
-    ]
-)
-MT10_V3_ARGS_KWARGS = _get_args_kwargs(ALL_V3_ENVIRONMENTS, MT10_V3)
-
-MT25_V3 = _get_env_dict(
-    [
-        "reach-v3",
-        "push-v3",
-        "pick-place-v3",
-        "door-open-v3",
-        "drawer-open-v3",
-        "drawer-close-v3",
-        "button-press-topdown-v3",
-        "peg-insert-side-v3",
-        "window-open-v3",
-        "window-close-v3",
-        "coffee-pull-v3",
-        "pick-out-of-hole-v3",
-        "disassemble-v3",
-        "pick-place-wall-v3",
-        "basketball-v3",
-        "stick-pull-v3",
-        "button-press-wall-v3",
-        "faucet-open-v3",
-        "door-lock-v3",
-        "lever-pull-v3",
-        "sweep-into-v3",
-        "faucet-close-v3",
-        "coffee-button-v3",
-        "button-press-topdown-wall-v3",
-        "dial-turn-v3",
-    ]
-)
-MT25_V3_ARGS_KWARGS = _get_args_kwargs(ALL_V3_ENVIRONMENTS, MT25_V3)
-
-
-MT50_V3 = ALL_V3_ENVIRONMENTS
-MT50_V3_ARGS_KWARGS = _get_args_kwargs(ALL_V3_ENVIRONMENTS, MT50_V3)
-
 # ML Dicts
 
 ML1_V3 = _get_train_test_env_dict(
     list(ALL_V3_ENVIRONMENTS.keys()), list(ALL_V3_ENVIRONMENTS.keys())
 )
 ML1_args_kwargs = _get_args_kwargs(ALL_V3_ENVIRONMENTS, ML1_V3["train"])
-
-ML10_V3 = _get_train_test_env_dict(
-    train_env_names=[
-        "reach-v3",
-        "push-v3",
-        "pick-place-v3",
-        "door-open-v3",
-        "drawer-close-v3",
-        "button-press-topdown-v3",
-        "peg-insert-side-v3",
-        "window-open-v3",
-        "sweep-v3",
-        "basketball-v3",
-    ],
-    test_env_names=[
-        "drawer-open-v3",
-        "door-close-v3",
-        "shelf-place-v3",
-        "sweep-into-v3",
-        "lever-pull-v3",
-    ],
-)
-ML10_ARGS_KWARGS = {
-    "train": _get_args_kwargs(ALL_V3_ENVIRONMENTS, ML10_V3["train"]),
-    "test": _get_args_kwargs(ALL_V3_ENVIRONMENTS, ML10_V3["test"]),
-}
-
-
-ML25_V3 = _get_train_test_env_dict(
-    train_env_names=[
-        "reach-v3",
-        "push-v3",
-        "pick-place-v3",
-        "door-open-v3",
-        "drawer-open-v3",
-        "drawer-close-v3",
-        "button-press-topdown-v3",
-        "peg-insert-side-v3",
-        "window-open-v3",
-        "window-close-v3",
-        "coffee-pull-v3",
-        "pick-out-of-hole-v3",
-        "disassemble-v3",
-        "pick-place-wall-v3",
-        "basketball-v3",
-        "stick-pull-v3",
-        "button-press-wall-v3",
-        "faucet-open-v3",
-        "door-lock-v3",
-        "lever-pull-v3",
-        "sweep-into-v3",
-        "faucet-close-v3",
-        "coffee-button-v3",
-        "button-press-topdown-wall-v3",
-        "dial-turn-v3",
-    ],
-    test_env_names=[
-        "basketball-v3",
-        "door-close-v3",
-        "shelf-place-v3",
-        "sweep-v3",
-        "button-press-v3",
-    ],
-)
-
-ML25_ARGS_KWARGS = {
-    "train": _get_args_kwargs(ALL_V3_ENVIRONMENTS, ML25_V3["train"]),
-    "test": _get_args_kwargs(ALL_V3_ENVIRONMENTS, ML25_V3["test"]),
-}
-
-
-ML45_V3 = _get_train_test_env_dict(
-    train_env_names=[
-        "assembly-v3",
-        "basketball-v3",
-        "button-press-topdown-v3",
-        "button-press-topdown-wall-v3",
-        "button-press-v3",
-        "button-press-wall-v3",
-        "coffee-button-v3",
-        "coffee-pull-v3",
-        "coffee-push-v3",
-        "dial-turn-v3",
-        "disassemble-v3",
-        "door-close-v3",
-        "door-open-v3",
-        "drawer-close-v3",
-        "drawer-open-v3",
-        "faucet-open-v3",
-        "faucet-close-v3",
-        "hammer-v3",
-        "handle-press-side-v3",
-        "handle-press-v3",
-        "handle-pull-side-v3",
-        "handle-pull-v3",
-        "lever-pull-v3",
-        "pick-place-wall-v3",
-        "pick-out-of-hole-v3",
-        "push-back-v3",
-        "pick-place-v3",
-        "plate-slide-v3",
-        "plate-slide-side-v3",
-        "plate-slide-back-v3",
-        "plate-slide-back-side-v3",
-        "peg-insert-side-v3",
-        "peg-unplug-side-v3",
-        "soccer-v3",
-        "stick-push-v3",
-        "stick-pull-v3",
-        "push-wall-v3",
-        "push-v3",
-        "reach-wall-v3",
-        "reach-v3",
-        "shelf-place-v3",
-        "sweep-into-v3",
-        "sweep-v3",
-        "window-open-v3",
-        "window-close-v3",
-    ],
-    test_env_names=[
-        "bin-picking-v3",
-        "box-close-v3",
-        "hand-insert-v3",
-        "door-lock-v3",
-        "door-unlock-v3",
-    ],
-)
-ML45_ARGS_KWARGS = {
-    "train": _get_args_kwargs(ALL_V3_ENVIRONMENTS, ML45_V3["train"]),
-    "test": _get_args_kwargs(ALL_V3_ENVIRONMENTS, ML45_V3["test"]),
-}
