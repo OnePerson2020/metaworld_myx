@@ -6,9 +6,9 @@ import abc
 import pickle
 from collections import OrderedDict
 from functools import partial
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
-import gymnasium as gym  # type: ignore
+import gymnasium as gym 
 import numpy as np
 import numpy.typing as npt
 
@@ -21,8 +21,8 @@ from metaworld.env_dict import (
     ALL_V3_ENVIRONMENTS_GOAL_HIDDEN,
     ALL_V3_ENVIRONMENTS_GOAL_OBSERVABLE,
 )
-from metaworld.sawyer_xyz_env import SawyerXYZEnv  # type: ignore
-from metaworld.types import Task  # type: ignore
+from metaworld.sawyer_xyz_env import SawyerXYZEnv 
+from metaworld.types import Task 
 from metaworld.wrappers import (
     AutoTerminateOnSuccessWrapper,
     CheckpointWrapper,
@@ -297,8 +297,8 @@ def _init_each_env(
         height=height,
     )
     if seed is not None:
-        env.seed(seed)  # type: ignore
-    env = gym.wrappers.TimeLimit(env, max_episode_steps or env.max_path_length)  # type: ignore
+        env.seed(seed) 
+    env = gym.wrappers.TimeLimit(env, max_episode_steps or env.max_path_length) 
     env = AutoTerminateOnSuccessWrapper(env)
     env.toggle_terminate_on_success(terminate_on_success)
     if use_one_hot:
@@ -340,7 +340,7 @@ def make_mt_envs(
     if name in ALL_V3_ENVIRONMENTS.keys():
         benchmark = MT1(name, seed=seed)
         tasks = [task for task in benchmark.train_tasks]
-        return _init_each_env(  # type: ignore[misc]
+        return _init_each_env( [misc]
             env_cls=benchmark.train_classes[name],
             tasks=tasks,
             seed=seed,
@@ -459,11 +459,11 @@ def register_mw_envs() -> None:
             global _N_GOALS
             _N_GOALS = lamb_kwargs["num_goals"]
             del lamb_kwargs["num_goals"]
-        return make_mt_envs(  # type: ignore
+        return make_mt_envs( 
             mt_bench,
             seed=seed,
             use_one_hot=use_one_hot,
-            vector_strategy=vector_strategy,  # type: ignore
+            vector_strategy=vector_strategy, 
             autoreset_mode=autoreset_mode,
             **lamb_kwargs,
         )
@@ -511,7 +511,7 @@ def register_mw_envs() -> None:
             id=f"Meta-World/ML1-{split}",
             vector_entry_point=lambda env_name, vector_strategy="sync", autoreset_mode=gym.vector.AutoresetMode.SAME_STEP, total_tasks_per_cls=None, meta_batch_size=20, seed=None, num_envs=None, **kwargs: _ml_bench_vector_entry_point(
                 env_name,
-                split,  # type: ignore[arg-type]
+                split, [arg-type]
                 vector_strategy,
                 autoreset_mode,
                 total_tasks_per_cls,
@@ -527,7 +527,7 @@ def register_mw_envs() -> None:
         id="Meta-World/goal_hidden",
         entry_point=lambda env_name, seed: ALL_V3_ENVIRONMENTS_GOAL_HIDDEN[
             env_name + "-goal-hidden" if "-goal-hidden" not in env_name else env_name
-        ](  # type: ignore
+        ]( 
             seed=seed,
         ),
         kwargs={},
@@ -539,7 +539,7 @@ def register_mw_envs() -> None:
             env_name + "-goal-observable"
             if "-goal-observable" not in env_name
             else env_name
-        ](  # type: ignore
+        ]( 
             seed=seed
         ),
         kwargs={},
@@ -557,9 +557,9 @@ def register_mw_envs() -> None:
         vectorizer: type[gym.vector.VectorEnv] = getattr(
             gym.vector, f"{vector_strategy.capitalize()}VectorEnv"
         )
-        return vectorizer(  # type: ignore
+        return vectorizer( 
             [
-                partial(  # type: ignore
+                partial( 
                     make_mt_envs,
                     env_name,
                     num_tasks=len(envs_list),
@@ -599,10 +599,10 @@ def register_mw_envs() -> None:
         num_envs=None,
         **lamb_kwargs,
     ):
-        return _make_ml_envs_inner(  # type: ignore
+        return _make_ml_envs_inner( 
             CustomML(train_envs, test_envs, seed=seed),
             meta_batch_size=meta_batch_size,
-            vector_strategy=vector_strategy,  # type: ignore
+            vector_strategy=vector_strategy, 
             autoreset_mode=autoreset_mode,
             total_tasks_per_cls=total_tasks_per_cls,
             seed=seed,
