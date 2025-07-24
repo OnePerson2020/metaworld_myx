@@ -214,11 +214,6 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         self.width = width
         self.height = height
 
-        # TODO Probably needs to be removed
-        self.discrete_goal_space: Box | None = None
-        self.discrete_goals: list = []
-        self.active_discrete_goal: int | None = None
-
         self._partially_observable: bool = True
 
         self.task_name = self.__class__.__name__
@@ -344,19 +339,6 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         )
         self.data.mocap_pos = new_mocap_pos
         self.data.mocap_quat = np.array([1, 0, 1, 0])
-
-    def discretize_goal_space(self, goals: list) -> None:
-        """Discretizes the goal space into a Discrete space.
-        Current disabled and callign it will stop execution.
-
-        Args:
-            goals: List of goals to discretize
-        """
-        assert False, "Discretization is not supported at the moment."
-        assert len(goals) >= 1
-        self.discrete_goals = goals
-        # update the goal_space to a Discrete space
-        self.discrete_goal_space = Discrete(len(self.discrete_goals))
 
     def _set_obj_xyz(self, pos: npt.NDArray[Any]) -> None:
         """Sets the position of the object.

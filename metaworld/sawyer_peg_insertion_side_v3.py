@@ -15,22 +15,6 @@ from metaworld.utils import reward_utils
 
 class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
     TARGET_RADIUS: float = 0.07
-    """
-    Motivation for V3:
-        V1 was difficult to solve because the observation didn't say where
-        to insert the peg (the hole's location). Furthermore, the hole object
-        could be initialized in such a way that it severely restrained the
-        sawyer's movement.
-    Changelog from V1 to V3:
-        - (8/21/20) Updated to Byron's XML
-        - (7/7/20) Removed 1 element vector. Replaced with 3 element position
-            of the hole (for consistency with other environments)
-        - (6/16/20) Added a 1 element vector to the observation. This vector
-            points from the end effector to the hole in the Y direction.
-            i.e. (self._target_pos - pos_hand)[1]
-        - (6/16/20) Used existing goal_low and goal_high values to constrain
-            the hole's position, as opposed to hand_low and hand_high
-    """
 
     def __init__(
         self,
@@ -42,7 +26,6 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         reward_function_version: str | None = None,  # 添加这行
 
     ) -> None:
-        hand_init_pos = (0, 0.6, 0.2)
 
         hand_low = (-0.5, 0.40, 0.05)
         hand_high = (0.5, 1, 0.5)

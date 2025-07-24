@@ -340,7 +340,7 @@ def make_mt_envs(
     if name in ALL_V3_ENVIRONMENTS.keys():
         benchmark = MT1(name, seed=seed)
         tasks = [task for task in benchmark.train_tasks]
-        return _init_each_env( [misc]
+        return _init_each_env(
             env_cls=benchmark.train_classes[name],
             tasks=tasks,
             seed=seed,
@@ -511,7 +511,7 @@ def register_mw_envs() -> None:
             id=f"Meta-World/ML1-{split}",
             vector_entry_point=lambda env_name, vector_strategy="sync", autoreset_mode=gym.vector.AutoresetMode.SAME_STEP, total_tasks_per_cls=None, meta_batch_size=20, seed=None, num_envs=None, **kwargs: _ml_bench_vector_entry_point(
                 env_name,
-                split, [arg-type]
+                split,  # type: ignore[arg-type]
                 vector_strategy,
                 autoreset_mode,
                 total_tasks_per_cls,
@@ -522,7 +522,6 @@ def register_mw_envs() -> None:
             ),
             kwargs={},
         )
-
     register(
         id="Meta-World/goal_hidden",
         entry_point=lambda env_name, seed: ALL_V3_ENVIRONMENTS_GOAL_HIDDEN[

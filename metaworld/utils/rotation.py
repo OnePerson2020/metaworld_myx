@@ -1,29 +1,3 @@
-# Copyright (c) 2009-2017, Matthew Brett and Christoph Gohlke
-#    All rights reserved.
-#
-#    Redistribution and use in source and binary forms, with or without
-#    modification, are permitted provided that the following conditions are
-#    met:
-#
-#    1. Redistributions of source code must retain the above copyright notice,
-#    this list of conditions and the following disclaimer.
-#
-#    2. Redistributions in binary form must reproduce the above copyright
-#    notice, this list of conditions and the following disclaimer in the
-#    documentation and/or other materials provided with the distribution.
-#
-#    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-#    IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
-#    THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-#    PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
-#    CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-#    EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-#    PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-#    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-#    LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-#    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-#    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 """Utilities for computing rotations in 3D space.
 
 Many methods borrow heavily or entirely from transforms3d: https://github.com/matthew-brett/transforms3d
@@ -89,13 +63,7 @@ SO3
     (Not currently implemented)
     While not supported by MuJoCo, this representation has a lot of nice features.
     We expect to add support for these in the future.
-TODO / Missing
 --------------
-    - Rotation integration or derivatives (e.g. velocity conversions)
-    - More representations (SO3, etc)
-    - Random sampling (e.g. sample uniform random rotation)
-    - Performance benchmarks/measurements
-    - (Maybe) define everything as to/from matricies, for simplicity
 """
 
 # For testing whether a number is close to zero
@@ -217,7 +185,6 @@ def mat2quat(mat: npt.ArrayLike) -> npt.NDArray[np.float64]:
     K[..., 3, 2] = Qxy - Qyx
     K[..., 3, 3] = Qxx + Qyy + Qzz
     K /= 3.0
-    # TODO: vectorize this -- probably could be made faster
     q = np.empty(K.shape[:-2] + (4,))
     it = np.nditer(q[..., 0], flags=["multi_index"])
     while not it.finished:
