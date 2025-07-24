@@ -36,5 +36,4 @@ class InsertionSuccessChecker:
             'success': success,
             'insertion_depth': insertion_depth,
             'radial_distance': radial_distance,
-            # ... (其他返回信息可以按需添加)
         }

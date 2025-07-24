@@ -162,12 +162,22 @@ class HybridControlWrapper(gym.Wrapper):
 
         # 根据阶段调整选择矩阵
         if self.insertion_phase == "insert":
-            # 插入阶段：Y方向改为力控制
-            selection_pos = np.diag([1, 0, 1])  # X,Z位置控制，Y力控制
-            selection_rot = np.eye(3)  # 姿态仍然位置控制
+            # 插入阶段：Y方向改为力控制（如果设置了自定义函数）
+            if self._get_selection_matrices_func is not None:
+                selection_pos, selection_rot = self._get_selection_matrices_func()
+            else:
+                # 默认：Y轴位置控制，X、Z轴力控制
+                selection_pos = np.array([[0, 0, 0],   # X轴力控制
+                                          [0, 1, 0],   # Y轴位置控制
+                                          [0, 0, 0]])  # Z轴力控制
+                selection_rot = np.eye(3)  # 姿态仍然位置控制
         else:
-            # 其他阶段：纯位置控制
-            selection_pos, selection_rot = self._get_selection_matrices_func()
+            # 其他阶段：使用自定义函数或纯位置控制
+            if self._get_selection_matrices_func is not None:
+                selection_pos, selection_rot = self._get_selection_matrices_func()
+            else:
+                selection_pos = np.eye(3)
+                selection_rot = np.eye(3)
 
         # 计算控制器输出
         dt = self.env.unwrapped.dt
