@@ -10,9 +10,6 @@ ENV/
 env.bak/
 venv.bak/
 
-*.stl
-*.png
-
 MUJOCO_LOG.TXT
 
 # Other IDEs and editors
