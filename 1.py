@@ -1,16 +1,11 @@
-# keyboard_control_demo_pygame.py
-
-import gymnasium as gym
+# keyboard_control_demo_final.py
 import numpy as np
 import pygame
-import time
-
-# 导入 ppo_test 以注册自定义环境
 import ppo_test
 
 def print_instructions():
     """打印控制指令"""
-    print("机械臂键盘控制 Demo (Pygame 版本)")
+    print("机械臂键盘控制 Demo (最终修正版)")
     print("-" * 40)
     print("窗口必须处于激活状态才能接收按键！")
     print("\n位置控制:")
@@ -32,28 +27,24 @@ def main():
     """主执行函数"""
     print_instructions()
 
-    # 初始化 pygame 用于事件处理
     pygame.init()
-    # 我们只需要 pygame 的事件系统，但创建一个小窗口是标准做法
     pygame.display.set_mode((200, 200))
     pygame.display.set_caption("控制器")
 
-    # 创建并配置 Meta-World 环境
-    env = gym.make(
-        'Meta-World/MT1',
-        env_name='peg-insert-side-v3',
-        render_mode='human',
-        camera_name='corner2'
-    )
+    # 2. 不再使用 gym.make，而是直接实例化环境类，并传入所有参数
+    env_name = 'peg-insert-side-v3'
+    env_class = ppo_test._env_dict.ALL_V3_ENVIRONMENTS[env_name]
+    env = env_class(render_mode='human', width=1080, height=1920)
+
+    benchmark = ppo_test.MT1(env_name)
+    task = benchmark.train_tasks[0]  # 使用第一个训练任务
+    env.set_task(task)
     
-    # 重置环境
     obs, info = env.reset()
 
-    # 7维动作: [dx, dy, dz, d_roll, d_pitch, d_yaw, gripper]
     current_action = np.zeros(7, dtype=np.float32)
-    current_action[6] = -1.0  # 默认: 张开夹爪
+    current_action[6] = -1.0
 
-    # 键盘映射 (pygame.key 常量)
     KEY_MAP = {
         pygame.K_w: (0, 1.0), pygame.K_s: (0, -1.0),
         pygame.K_d: (1, 1.0), pygame.K_a: (1, -1.0),
@@ -65,8 +56,9 @@ def main():
     }
 
     running = True
+    clock = pygame.time.Clock()
+
     while running:
-        # --- 事件处理 (都在主线程) ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -79,23 +71,16 @@ def main():
             elif event.type == pygame.KEYUP:
                 if event.key in KEY_MAP:
                     index, _ = KEY_MAP[event.key]
-                    # 对于夹爪，松开按键时恢复张开状态
-                    if index == 6:
-                        current_action[index] = -1.0
-                    else:
-                        current_action[index] = 0.0
+                    current_action[index] = -1.0 if index == 6 else 0.0
 
-        # --- 仿真步进 ---
         obs, reward, terminated, truncated, info = env.step(current_action)
         
         if terminated or truncated:
             print("回合结束, 环境已重置。")
             obs, info = env.reset()
 
-        # 控制循环速率
-        time.sleep(1 / env.metadata['render_fps'])
+        clock.tick(env.metadata['render_fps'])
 
-    # 清理
     env.close()
     pygame.quit()
     print("程序已退出。")
