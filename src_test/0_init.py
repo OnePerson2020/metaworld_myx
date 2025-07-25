@@ -44,12 +44,11 @@ while count < 500 and not done:
     
     # 执行动作
     obs, reward, terminated, truncated, info = env.step(action)
-    
+
     # 检查任务是否成功
-    # info['success'] 在成功时会返回 1.0
     if info['success'] > 0.5:
         print("任务成功！")
-        # done = True
+        done = True
         
     time.sleep(0.02)
     count += 1

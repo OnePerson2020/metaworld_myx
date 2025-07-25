@@ -10,14 +10,14 @@ from typing import Any, Callable, Literal, SupportsFloat
 import mujoco
 import numpy as np
 import numpy.typing as npt
-from gymnasium.envs.mujoco import MujocoEnv as mjenv_gym
+from gymnasium.envs.mujoco.mujoco_env import MujocoEnv as mjenv_gym
 from gymnasium.spaces import Box, Discrete, Space
 from gymnasium.utils import seeding
 from gymnasium.utils.ezpickle import EzPickle
 from typing_extensions import TypeAlias
 
 from metaworld.types import XYZ, EnvironmentStateDict, ObservationDict, Task
-from metaworld.utils import reward_utils
+from metaworld.utils import reward_utils, rotation
 
 RenderMode: TypeAlias = "Literal['human', 'rgb_array', 'depth_array']"
 
@@ -25,8 +25,8 @@ RenderMode: TypeAlias = "Literal['human', 'rgb_array', 'depth_array']"
 class SawyerMocapBase(mjenv_gym):
     """Provides some commonly-shared functions for Sawyer Mujoco envs that use mocap for XYZ control."""
 
-    mocap_low = np.array([-0.2, 0.5, 0.06])
-    mocap_high = np.array([0.2, 0.7, 0.6])
+    mocap_low = np.array([-0.2, 0.5, 0.06, -1.0, -1.0, -1.0, -1.0])
+    mocap_high = np.array([0.2, 0.7, 0.6, 1.0, 1.0, 1.0, 1.0])
     metadata = {
         "render_modes": [
             "human",
@@ -68,6 +68,10 @@ class SawyerMocapBase(mjenv_gym):
         """Returns the position of the end effector."""
         return self.data.body("hand").xpos
 
+    def get_endeff_quat(self) -> npt.NDArray[Any]:
+        """Returns the quaternion of the end effector."""
+        return self.data.body("hand").xquat
+
     @property
     def tcp_center(self) -> npt.NDArray[Any]:
         """The COM of the gripper's 2 fingers.
@@ -103,8 +107,8 @@ class SawyerMocapBase(mjenv_gym):
         Args:
             state: A tuple of (qpos, qvel).
         """
-        mocap_pos, mocap_quat = state
-        self.set_state(mocap_pos, mocap_quat)
+        qpos, qvel = state
+        self.set_state(qpos, qvel)
 
     def __getstate__(self) -> EnvironmentStateDict:
         """Returns the full state of the environment as a dict.
@@ -148,12 +152,19 @@ class SawyerMocapBase(mjenv_gym):
 class SawyerXYZEnv(SawyerMocapBase, EzPickle):
     """The base environment for all Sawyer Mujoco envs that use mocap for XYZ control."""
 
-    _HAND_SPACE = Box(
+    _HAND_POS_SPACE = Box(
         np.array([-0.525, 0.348, -0.0525]),
         np.array([+0.525, 1.025, 0.7]),
         dtype=np.float64,
     )
     """Bounds for hand position."""
+
+    _HAND_QUAT_SPACE = Box(
+        np.array([-1.0, -1.0, -1.0, -1.0]),
+        np.array([1.0, 1.0, 1.0, 1.0]),
+        dtype=np.float64,
+    )
+    """Bounds for hand quaternion."""
 
     max_path_length: int = 500
     """The maximum path length for the environment (the task horizon)."""
@@ -185,7 +196,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         mocap_low: XYZ | None = None,
         mocap_high: XYZ | None = None,
         action_scale: float = 1.0 / 100,
-        action_rot_scale: float = 1.0,
+        action_rot_scale: float = 0.1,
         render_mode: RenderMode | None = None,
         camera_id: int | None = None,
         camera_name: str | None = None,
@@ -201,8 +212,8 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             mocap_low = hand_low
         if mocap_high is None:
             mocap_high = hand_high
-        self.mocap_low = np.hstack(mocap_low)
-        self.mocap_high = np.hstack(mocap_high)
+        self.mocap_low = np.hstack((mocap_low, [-1.0, -1.0, -1.0, -1.0]))
+        self.mocap_high = np.hstack((mocap_high, [1.0, 1.0, 1.0, 1.0]))
         self.curr_path_length: int = 0
         self.seeded_rand_vec: bool = False
         self._freeze_rand_vec: bool = True
@@ -231,14 +242,14 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         mujoco.mj_forward(
             self.model, self.data
         )  # *** DO NOT REMOVE: EZPICKLE WON'T WORK *** #
-
+        
         self._did_see_sim_exception: bool = False
         self.init_left_pad: npt.NDArray[Any] = self.get_body_com("leftpad")
         self.init_right_pad: npt.NDArray[Any] = self.get_body_com("rightpad")
 
         self.action_space = Box(  # type: ignore
-            np.array([-1, -1, -1, -1]),
-            np.array([+1, +1, +1, +1]),
+            np.array([-1, -1, -1, -1, -1, -1, -1]), # Extended action space to 7 dimensions
+            np.array([+1, +1, +1, +1, +1, +1, +1]), # Extended action space to 7 dimensions
             dtype=np.float32,
         )
         self._obs_obj_max_len: int = 14
@@ -253,15 +264,17 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         # in this initiation of _prev_obs are correct. That being said, it
         # doesn't seem to matter (it will only effect frame-stacking for the
         # very first observation)
-
+        # The observation size is 3 (pos) + 4 (quat) + 1 (gripper) + 14 (obj_padded) = 22
+        # Stacked observation is 22 * 2 + 3 (goal) = 47
         self.init_qpos = np.copy(self.data.qpos)
         self.init_qvel = np.copy(self.data.qvel)
-        self._prev_obs = self._get_curr_obs_combined_no_goal()
+        self._prev_obs = np.zeros(22, dtype=np.float64)
 
         self.task_name = self.__class__.__name__
 
         EzPickle.__init__(
             self,
+            self.model_name,
             frame_skip,
             hand_low,
             hand_high,
@@ -330,15 +343,27 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             action: The action to apply (in offsets between :math:`[-1, 1]` for each axis in XYZ).
         """
         action = np.clip(action, -1, 1)
-        pos_delta = action * self.action_scale
+        pos_delta = action[:3] * self.action_scale # Split action for position
+        quat_delta_euler = action[3:6] * self.action_rot_scale # Split action for rotation (Euler angles)
+
         new_mocap_pos = self.data.mocap_pos + pos_delta[None]
         new_mocap_pos[0, :] = np.clip(
             new_mocap_pos[0, :],
-            self.mocap_low,
-            self.mocap_high,
+            self.mocap_low[:3], # Clip position only
+            self.mocap_high[:3], # Clip position only
         )
         self.data.mocap_pos = new_mocap_pos
-        self.data.mocap_quat = np.array([1, 0, 1, 0])
+
+        # Convert current mocap_quat to Euler, add delta, convert back to quat
+        current_quat = self.data.mocap_quat[0]
+        current_euler = rotation.quat2euler(current_quat)
+        new_euler = current_euler + quat_delta_euler
+        new_quat = rotation.euler2quat(new_euler)
+        
+        # Normalize new_quat to ensure it's a unit quaternion
+        new_quat = new_quat / np.linalg.norm(new_quat)
+
+        self.data.mocap_quat = new_quat[None] # Apply new quaternion
 
     def _set_obj_xyz(self, pos: npt.NDArray[Any]) -> None:
         """Sets the position of the object.
@@ -474,6 +499,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         """
 
         pos_hand = self.get_endeff_pos()
+        quat_hand = self.get_endeff_quat() # Get hand quaternion
 
         finger_right, finger_left = (
             self.data.body("rightclaw"),
@@ -500,13 +526,13 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         obs_obj_padded[: len(obj_pos) + len(obj_quat)] = np.hstack(
             [np.hstack((pos, quat)) for pos, quat in zip(obj_pos_split, obj_quat_split)]
         )
-        return np.hstack((pos_hand, gripper_distance_apart, obs_obj_padded))
+        return np.hstack((pos_hand, quat_hand, gripper_distance_apart, obs_obj_padded)) # Include quat_hand
 
     def _get_obs(self) -> npt.NDArray[np.float64]:
         """Frame stacks `_get_curr_obs_combined_no_goal()` and concatenates the goal position to form a single flat observation.
 
         Returns:
-            The flat observation array (39 elements)
+            The flat observation array (47 elements)
         """
         # do frame stacking
         pos_goal = self._get_pos_goal()
@@ -520,10 +546,16 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
 
     def _get_obs_dict(self) -> ObservationDict:
         obs = self._get_obs()
+        # The state_achieved_goal should be the end-effector position (3) + quaternion (4) = 7 elements
+        # The current observation is pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + obs_obj_padded (14) = 22
+        # The previous observation is 22 elements
+        # The goal is 3 elements
+        # Total observation is 22 + 22 + 3 = 47
+        # state_achieved_goal should be the current end-effector pos and quat, which are the first 7 elements of curr_obs
         return dict(
             state_observation=obs,
             state_desired_goal=self._get_pos_goal(),
-            state_achieved_goal=obs[3:-3],
+            state_achieved_goal=obs[:7], # Updated to reflect hand pos and quat
         )
 
     @cached_property
@@ -542,13 +574,20 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             goal_high = self.goal_space.high
         gripper_low = -1.0
         gripper_high = +1.0
+        
+        # Current observation: pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + obs_obj_padded (14) = 22
+        # Previous observation: 22
+        # Goal: 3
+        # Total: 22 + 22 + 3 = 47
         return Box(
             np.hstack(
                 (
-                    self._HAND_SPACE.low,
+                    self._HAND_POS_SPACE.low, # Changed to _HAND_POS_SPACE
+                    self._HAND_QUAT_SPACE.low, # Added _HAND_QUAT_SPACE
                     gripper_low,
                     obj_low,
-                    self._HAND_SPACE.low,
+                    self._HAND_POS_SPACE.low, # Changed to _HAND_POS_SPACE
+                    self._HAND_QUAT_SPACE.low, # Added _HAND_QUAT_SPACE
                     gripper_low,
                     obj_low,
                     goal_low,
@@ -556,10 +595,12 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             ),
             np.hstack(
                 (
-                    self._HAND_SPACE.high,
+                    self._HAND_POS_SPACE.high, # Changed to _HAND_POS_SPACE
+                    self._HAND_QUAT_SPACE.high, # Added _HAND_QUAT_SPACE
                     gripper_high,
                     obj_high,
-                    self._HAND_SPACE.high,
+                    self._HAND_POS_SPACE.high, # Changed to _HAND_POS_SPACE
+                    self._HAND_QUAT_SPACE.high, # Added _HAND_QUAT_SPACE
                     gripper_high,
                     obj_high,
                     goal_high,
@@ -575,13 +616,13 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         """Step the environment.
 
         Args:
-            action: The action to take. Must be a 4 element array of floats.
+            action: The action to take. Must be a 7 element array of floats.
 
         Returns:
             The (next_obs, reward, terminated, truncated, info) tuple.
         """
-        assert len(action) == 4, f"Actions should be size 4, got {len(action)}"
-        self.set_xyz_action(action[:3])
+        assert len(action) == 7, f"Actions should be size 7, got {len(action)}" # Changed to 7
+        self.set_xyz_action(action[:6]) # Pass position and rotation actions
         if self.curr_path_length >= self.max_path_length:
             raise ValueError("You must reset the env manually once truncate==True")
         self.do_simulation([action[-1], -action[-1]], n_frames=self.frame_skip)
@@ -597,8 +638,8 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             return (
                 self._last_stable_obs,  # observation just before going unstable
                 0.0,  # reward (penalize for causing instability)
-                False,
                 False,  # termination flag always False
+                False,
                 {  # info
                     "success": False,
                     "near_object": 0.0,
@@ -668,8 +709,10 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         self.curr_path_length = 0
         self.reset_model()
         obs, info = super().reset()
-        self._prev_obs = obs[:18].copy()
-        obs[18:36] = self._prev_obs
+        assert obs is not None, "Observation should not be None after reset" # Added assertion
+        # Update _prev_obs and obs based on new observation size (22 for curr_obs)
+        self._prev_obs = obs[:22].copy()
+        obs[22:44] = self._prev_obs
         obs = obs.astype(np.float64)
         return obs, info
 
@@ -682,7 +725,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         mocap_id = self.model.body_mocapid[self.data.body("mocap").id]
         for _ in range(steps):
             self.data.mocap_pos[mocap_id][:] = self.hand_init_pos
-            self.data.mocap_quat[mocap_id][:] = np.array([1, 0, 1, 0])
+            self.data.mocap_quat[mocap_id][:] = np.array([1, 0, 1, 0]) # Set to identity quaternion
             self.do_simulation([-1, 1], self.frame_skip)
         self.init_tcp = self.tcp_center
 

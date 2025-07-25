@@ -1,39 +1,30 @@
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 import numpy.typing as npt
 
 
 class Action:
-    """Represents an action to be taken in an environment.
+    """Represents an action to be taken in an environment."""
 
-    Once initialized, fields can be assigned as if the action
-    is a dictionary. Once filled, the corresponding array is
-    available as an instance variable.
-    """
-
-    def __init__(self, structure: dict[str, npt.NDArray[Any] | int]) -> None:
+    def __init__(self, action_dim: int) -> None:
         """Action.
 
         Args:
-            structure: Map from field names to output array indices
+            action_dim: The dimension of the action space.
         """
-        self._structure = structure
-        self.array = np.zeros(len(self), dtype=np.float32)
+        self.action_dim = action_dim
+        self.array = np.zeros(action_dim, dtype=np.float32)
 
-    def __len__(self) -> int:
-        return sum(
-            [1 if isinstance(idx, int) else len(idx) for idx in self._structure.items()]
-        )
+    def sample(self) -> np.ndarray:
+        """Samples a random action from the action space."""
+        return np.random.uniform(-1, 1, self.action_dim).astype(np.float32)
 
-    def __getitem__(self, key) -> npt.NDArray[np.float32]:
-        assert key in self._structure, (
-            "This action's structure does not contain %s" % key
-        )
-        return self.array[self._structure[key]]
+    def set_action(self, action: np.ndarray) -> None:
+        """Sets the action array.
 
-    def __setitem__(self, key: str, value) -> None:
-        assert key in self._structure, f"This action's structure does not contain {key}"
-        self.array[self._structure[key]] = value
+        Args:
+            action: The action array to set.
+        """
+        assert action.shape[0] == self.action_dim, "Action dimension mismatch"
+        self.array = action

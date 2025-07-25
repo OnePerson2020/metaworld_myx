@@ -1,473 +1,100 @@
-"""Utilities for computing rotations in 3D space.
+"""Rotation utilities for quaternion and Euler angle conversions."""
 
-Many methods borrow heavily or entirely from transforms3d: https://github.com/matthew-brett/transforms3d
-They have mostly been modified to support batched operations.
-"""
 from __future__ import annotations
-
-import itertools
-from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 
-"""
-Rotations
-=========
-Note: these have caused many subtle bugs in the past.
-Be careful while updating these methods and while using them in clever ways.
-See MuJoCo documentation here: http://mujoco.org/book/modeling.html#COrientation
-Conventions
------------
-    - All functions accept batches as well as individual rotations
-    - All rotation conventions match respective MuJoCo defaults
-    - All angles are in radians
-    - Matricies follow LR convention
-    - Euler Angles are all relative with 'xyz' axes ordering
-    - See specific representation for more information
-Representations
----------------
-Euler
-    There are many euler angle frames -- here we will strive to use the default
-        in MuJoCo, which is eulerseq='xyz'.
-    This frame is a relative rotating frame, about x, y, and z axes in order.
-        Relative rotating means that after we rotate about x, then we use the
-        new (rotated) y, and the same for z.
-Quaternions
-    These are defined in terms of rotation (angle) about a unit vector (x, y, z)
-    We use the following <q0, q1, q2, q3> convention:
-            q0 = cos(angle / 2)
-            q1 = sin(angle / 2) * x
-            q2 = sin(angle / 2) * y
-            q3 = sin(angle / 2) * z
-        This is also sometimes called qw, qx, qy, qz.
-    Note that quaternions are ambiguous, because we can represent a rotation by
-        angle about vector <x, y, z> and -angle about vector <-x, -y, -z>.
-        To choose between these, we pick "first nonzero positive", where we
-        make the first nonzero element of the quaternion positive.
-    This can result in mismatches if you're converting an quaternion that is not
-        "first nonzero positive" to a different representation and back.
-Axis Angle
-    (Not currently implemented)
-    These are very straightforward.  Rotation is angle about a unit vector.
-XY Axes
-    (Not currently implemented)
-    We are given x axis and y axis, and z axis is cross product of x and y.
-Z Axis
-    This is NOT RECOMMENDED.  Defines a unit vector for the Z axis,
-        but rotation about this axis is not well defined.
-    Instead pick a fixed reference direction for another axis (e.g. X)
-        and calculate the other (e.g. Y = Z cross-product X),
-        then use XY Axes rotation instead.
-SO3
-    (Not currently implemented)
-    While not supported by MuJoCo, this representation has a lot of nice features.
-    We expect to add support for these in the future.
---------------
-"""
 
-# For testing whether a number is close to zero
-_FLOAT_EPS = np.finfo(np.float64).eps
-_EPS4 = _FLOAT_EPS * 4.0
-
-
-def euler2mat(euler: npt.ArrayLike) -> npt.NDArray[np.float64]:
-    """Converts euler angles to rotation matrices.
-
+def quat2euler(quat: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    """Convert quaternion to Euler angles (roll, pitch, yaw).
+    
     Args:
-        euler: the euler angles. Can be batched and stored in any (nested) iterable.
-
+        quat: Quaternion in [w, x, y, z] format
+        
     Returns:
-        Rotation matrices corresponding to the euler angles, in double precision.
+        Euler angles in [roll, pitch, yaw] format (radians)
     """
-    euler = np.asarray(euler, dtype=np.float64)
-    assert euler.shape[-1] == 3, f"Invalid shaped euler {euler}"
+    w, x, y, z = quat
+    
+    # Roll (x-axis rotation)
+    sinr_cosp = 2 * (w * x + y * z)
+    cosr_cosp = 1 - 2 * (x * x + y * y)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+    
+    # Pitch (y-axis rotation)
+    sinp = 2 * (w * y - z * x)
+    if np.abs(sinp) >= 1:
+        pitch = np.copysign(np.pi / 2, sinp)  # Use 90 degrees if out of range
+    else:
+        pitch = np.arcsin(sinp)
+    
+    # Yaw (z-axis rotation)
+    siny_cosp = 2 * (w * z + x * y)
+    cosy_cosp = 1 - 2 * (y * y + z * z)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+    
+    return np.array([roll, pitch, yaw])
 
-    ai, aj, ak = -euler[..., 2], -euler[..., 1], -euler[..., 0]
-    si, sj, sk = np.sin(ai), np.sin(aj), np.sin(ak)
-    ci, cj, ck = np.cos(ai), np.cos(aj), np.cos(ak)
-    cc, cs = ci * ck, ci * sk
-    sc, ss = si * ck, si * sk
 
-    mat = np.empty(euler.shape[:-1] + (3, 3), dtype=np.float64)
-    mat[..., 2, 2] = cj * ck
-    mat[..., 2, 1] = sj * sc - cs
-    mat[..., 2, 0] = sj * cc + ss
-    mat[..., 1, 2] = cj * sk
-    mat[..., 1, 1] = sj * ss + cc
-    mat[..., 1, 0] = sj * cs - sc
-    mat[..., 0, 2] = -sj
-    mat[..., 0, 1] = cj * si
-    mat[..., 0, 0] = cj * ci
-    return mat
-
-
-def euler2quat(euler: npt.ArrayLike) -> npt.NDArray[np.float64]:
-    """Converts euler angles to quaternions.
-
+def euler2quat(euler: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    """Convert Euler angles to quaternion.
+    
     Args:
-        euler: the euler angles. Can be batched and stored in any (nested) iterable.
-
+        euler: Euler angles in [roll, pitch, yaw] format (radians)
+        
     Returns:
-        Quaternions corresponding to the euler angles, in double precision.
+        Quaternion in [w, x, y, z] format
     """
-    euler = np.asarray(euler, dtype=np.float64)
-    assert euler.shape[-1] == 3, f"Invalid shape euler {euler}"
+    roll, pitch, yaw = euler
+    
+    # Abbreviations for the various angular functions
+    cy = np.cos(yaw * 0.5)
+    sy = np.sin(yaw * 0.5)
+    cp = np.cos(pitch * 0.5)
+    sp = np.sin(pitch * 0.5)
+    cr = np.cos(roll * 0.5)
+    sr = np.sin(roll * 0.5)
+    
+    w = cr * cp * cy + sr * sp * sy
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+    
+    return np.array([w, x, y, z])
 
-    ai, aj, ak = euler[..., 2] / 2, -euler[..., 1] / 2, euler[..., 0] / 2
-    si, sj, sk = np.sin(ai), np.sin(aj), np.sin(ak)
-    ci, cj, ck = np.cos(ai), np.cos(aj), np.cos(ak)
-    cc, cs = ci * ck, ci * sk
-    sc, ss = si * ck, si * sk
 
-    quat = np.empty(euler.shape[:-1] + (4,), dtype=np.float64)
-    quat[..., 0] = cj * cc + sj * ss
-    quat[..., 3] = cj * sc - sj * cs
-    quat[..., 2] = -(cj * ss + sj * cc)
-    quat[..., 1] = cj * cs - sj * sc
-    return quat
-
-
-def mat2euler(mat: npt.ArrayLike) -> npt.NDArray[np.float64]:
-    """Converts rotation matrices to euler angles.
-
+def normalize_quat(quat: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    """Normalize a quaternion to unit length.
+    
     Args:
-        mat: a 3D rotation matrix. Can be batched and stored in any (nested) iterable.
-
+        quat: Quaternion in [w, x, y, z] format
+        
     Returns:
-        Euler angles corresponding to the rotation matrices, in double precision.
+        Normalized quaternion
     """
-    mat = np.asarray(mat, dtype=np.float64)
-    assert mat.shape[-2:] == (3, 3), f"Invalid shape matrix {mat}"
-
-    cy = np.sqrt(mat[..., 2, 2] * mat[..., 2, 2] + mat[..., 1, 2] * mat[..., 1, 2])
-    condition = cy > _EPS4
-    euler = np.empty(mat.shape[:-1], dtype=np.float64)
-    euler[..., 2] = np.where(
-        condition,
-        -np.arctan2(mat[..., 0, 1], mat[..., 0, 0]),
-        -np.arctan2(-mat[..., 1, 0], mat[..., 1, 1]),
-    )
-    euler[..., 1] = np.where(
-        condition, -np.arctan2(-mat[..., 0, 2], cy), -np.arctan2(-mat[..., 0, 2], cy)
-    )
-    euler[..., 0] = np.where(
-        condition, -np.arctan2(mat[..., 1, 2], mat[..., 2, 2]), 0.0
-    )
-    return euler
+    norm = np.linalg.norm(quat)
+    if norm == 0:
+        return np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
+    return quat / norm
 
 
-def mat2quat(mat: npt.ArrayLike) -> npt.NDArray[np.float64]:
-    """Converts rotation matrices to quaternions.
-
+def quat_multiply(q1: npt.NDArray[np.float64], q2: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    """Multiply two quaternions.
+    
     Args:
-        mat: a 3D rotation matrix. Can be batched and stored in any (nested) iterable.
-
+        q1: First quaternion in [w, x, y, z] format
+        q2: Second quaternion in [w, x, y, z] format
+        
     Returns:
-        Quaternions corresponding to the rotation matrices, in double precision.
+        Product quaternion in [w, x, y, z] format
     """
-    mat = np.asarray(mat, dtype=np.float64)
-    assert mat.shape[-2:] == (3, 3), f"Invalid shape matrix {mat}"
-
-    Qxx, Qyx, Qzx = mat[..., 0, 0], mat[..., 0, 1], mat[..., 0, 2]
-    Qxy, Qyy, Qzy = mat[..., 1, 0], mat[..., 1, 1], mat[..., 1, 2]
-    Qxz, Qyz, Qzz = mat[..., 2, 0], mat[..., 2, 1], mat[..., 2, 2]
-    # Fill only lower half of symmetric matrix
-    K = np.zeros(mat.shape[:-2] + (4, 4), dtype=np.float64)
-    K[..., 0, 0] = Qxx - Qyy - Qzz
-    K[..., 1, 0] = Qyx + Qxy
-    K[..., 1, 1] = Qyy - Qxx - Qzz
-    K[..., 2, 0] = Qzx + Qxz
-    K[..., 2, 1] = Qzy + Qyz
-    K[..., 2, 2] = Qzz - Qxx - Qyy
-    K[..., 3, 0] = Qyz - Qzy
-    K[..., 3, 1] = Qzx - Qxz
-    K[..., 3, 2] = Qxy - Qyx
-    K[..., 3, 3] = Qxx + Qyy + Qzz
-    K /= 3.0
-    q = np.empty(K.shape[:-2] + (4,))
-    it = np.nditer(q[..., 0], flags=["multi_index"])
-    while not it.finished:
-        # Use Hermitian eigenvectors, values for speed
-        vals, vecs = np.linalg.eigh(K[it.multi_index])
-        # Select largest eigenvector, reorder to w,x,y,z quaternion
-        q[it.multi_index] = vecs[[3, 0, 1, 2], np.argmax(vals)]
-        # Prefer quaternion with positive w
-        # (q * -1 corresponds to same rotation as q)
-        if q[it.multi_index][0] < 0:
-            q[it.multi_index] *= -1
-        it.iternext()
-    return q
-
-
-def quat2euler(quat: npt.ArrayLike) -> npt.NDArray[np.float64]:
-    """Converts quaternions to euler angles.
-
-    Args:
-        quat: the quaternion. Can be batched and stored in any (nested) iterable.
-
-    Returns:
-        Euler angles corresponding to the quaternions, in double precision.
-    """
-    return mat2euler(quat2mat(quat))
-
-
-def subtract_euler(
-    e1: npt.NDArray[Any], e2: npt.NDArray[Any]
-) -> npt.NDArray[np.float64]:
-    """Subtracts two euler angles.
-
-    Args:
-        e1: the first euler angles. Can be batched.
-        e2: the second euler angles. Can be batched.
-
-    Returns:
-        Euler angles corresponding to the difference between e1 and e2, in double precision.
-    """
-    assert e1.shape == e2.shape
-    assert e1.shape[-1] == 3
-    q1 = euler2quat(e1)
-    q2 = euler2quat(e2)
-    q_diff = quat_mul(q1, quat_conjugate(q2))
-    return quat2euler(q_diff)
-
-
-def quat2mat(quat: npt.ArrayLike) -> npt.NDArray[np.float64]:
-    """Converts quaternions to rotation matrices.
-
-    Args:
-        quat: the quaternion. Can be batched and stored in any (nested) iterable.
-
-    Returns:
-        Rotation matrices corresponding to the quaternions, in double precision.
-    """
-    quat = np.asarray(quat, dtype=np.float64)
-    assert quat.shape[-1] == 4, f"Invalid shape quat {quat}"
-
-    w, x, y, z = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
-    Nq = np.sum(quat * quat, axis=-1)
-    s = 2.0 / Nq
-    X, Y, Z = x * s, y * s, z * s
-    wX, wY, wZ = w * X, w * Y, w * Z
-    xX, xY, xZ = x * X, x * Y, x * Z
-    yY, yZ, zZ = y * Y, y * Z, z * Z
-
-    mat = np.empty(quat.shape[:-1] + (3, 3), dtype=np.float64)
-    mat[..., 0, 0] = 1.0 - (yY + zZ)
-    mat[..., 0, 1] = xY - wZ
-    mat[..., 0, 2] = xZ + wY
-    mat[..., 1, 0] = xY + wZ
-    mat[..., 1, 1] = 1.0 - (xX + zZ)
-    mat[..., 1, 2] = yZ - wX
-    mat[..., 2, 0] = xZ - wY
-    mat[..., 2, 1] = yZ + wX
-    mat[..., 2, 2] = 1.0 - (xX + yY)
-    return np.where((Nq > _FLOAT_EPS)[..., np.newaxis, np.newaxis], mat, np.eye(3))
-
-
-def quat_conjugate(q: npt.NDArray[Any]) -> npt.NDArray[Any]:
-    """Returns the conjugate of a quaternion.
-
-    Args:
-        q: the quaternion. Can be batched.
-
-    Returns:
-        The conjugate of the quaternion.
-    """
-    inv_q = -q
-    inv_q[..., 0] *= -1
-    return inv_q
-
-
-def quat_mul(q0: npt.NDArray[Any], q1: npt.NDArray[Any]) -> npt.NDArray[Any]:
-    """Multiplies two quaternions.
-
-    Args:
-        q0: the first quaternion. Can be batched.
-        q1: the second quaternion. Can be batched.
-
-    Returns:
-        The product of `q0` and `q1`.
-    """
-    assert q0.shape == q1.shape
-    assert q0.shape[-1] == 4
-    assert q1.shape[-1] == 4
-
-    w0 = q0[..., 0]
-    x0 = q0[..., 1]
-    y0 = q0[..., 2]
-    z0 = q0[..., 3]
-
-    w1 = q1[..., 0]
-    x1 = q1[..., 1]
-    y1 = q1[..., 2]
-    z1 = q1[..., 3]
-
-    w = w0 * w1 - x0 * x1 - y0 * y1 - z0 * z1
-    x = w0 * x1 + x0 * w1 + y0 * z1 - z0 * y1
-    y = w0 * y1 + y0 * w1 + z0 * x1 - x0 * z1
-    z = w0 * z1 + z0 * w1 + x0 * y1 - y0 * x1
-    q = np.array([w, x, y, z])
-    if q.ndim == 2:
-        q = q.swapaxes(0, 1)
-    assert q.shape == q0.shape
-    return q
-
-
-def quat_rot_vec(q: npt.NDArray[Any], v0: npt.NDArray[Any]) -> npt.NDArray[np.float64]:
-    """Rotates a vector by a quaternion.
-
-    Args:
-        q: the quaternion.
-        v0: the vector.
-
-    Returns:
-        The rotated vector.
-    """
-    q_v0 = np.array([0, v0[0], v0[1], v0[2]])
-    q_v = quat_mul(q, quat_mul(q_v0, quat_conjugate(q)))
-    v = q_v[1:]
-    return v
-
-
-def quat_identity() -> npt.NDArray[np.int_]:
-    """Returns the identity quaternion."""
-    return np.array([1, 0, 0, 0])
-
-
-def quat2axisangle(quat: npt.NDArray[Any]) -> tuple[npt.NDArray[Any], float]:
-    """Converts a quaternion to an axis-angle representation.
-
-    Args:
-        quat: the quaternion.
-
-    Returns:
-        The axis-angle representation of `quat` as an `(axis, angle)` tuple.
-    """
-    theta = 0.0
-    axis = np.array([0, 0, 1])
-    sin_theta = np.linalg.norm(quat[1:])
-
-    if sin_theta > 0.0001:
-        theta = 2 * np.arcsin(sin_theta)
-        theta *= 1 if quat[0] >= 0 else -1
-        axis = quat[1:] / sin_theta
-
-    return axis, theta
-
-
-def euler2point_euler(euler: npt.NDArray[Any]) -> npt.NDArray[Any]:
-    """Convert euler angles to 2D points on the unit circle for each one.
-
-    Args:
-        euler: the euler angles. Can optionally have 1 batch dimension.
-
-    Returns:
-        2D points on the unit circle for each axis, returned as [`sin_x`, `sin_y`, `sin_z`, `cos_x`, `cos_y`, `cos_z`].
-    """
-    _euler = euler.copy()
-    if len(_euler.shape) < 2:
-        _euler = np.expand_dims(_euler, 0)
-    assert _euler.shape[1] == 3
-    _euler_sin = np.sin(_euler)
-    _euler_cos = np.cos(_euler)
-    return np.concatenate([_euler_sin, _euler_cos], axis=-1)
-
-
-def point_euler2euler(euler: npt.NDArray[Any]) -> npt.NDArray[Any]:
-    """Convert 2D points on the unit circle for each axis to euler angles.
-
-    Args:
-        euler: 2D points on the unit circle for each axis, stored as [`sin_x`, `sin_y`, `sin_z`, `cos_x`, `cos_y`, `cos_z`].
-            Can optionally have 1 batch dimension.
-
-    Returns:
-        The corresponding euler angles expressed as scalars.
-    """
-    _euler = euler.copy()
-    if len(_euler.shape) < 2:
-        _euler = np.expand_dims(_euler, 0)
-    assert _euler.shape[1] == 6
-    angle = np.arctan(_euler[..., :3] / _euler[..., 3:])
-    angle[_euler[..., 3:] < 0] += np.pi
-    return angle
-
-
-def quat2point_quat(quat: npt.NDArray[Any]) -> npt.NDArray[Any]:
-    """Convert the quaternion's angle to 2D points on the unit circle for each axis in 3D space.
-
-    Args:
-        quat: the quaternion. Can optionally have 1 batch dimension.
-
-    Returns:
-        A quaternion with its angle expressed as 2D points on the unit circle for each axis in 3D space, returned as
-            [`sin_x`, `sin_y`, `sin_z`, `cos_x`, `cos_y`, `cos_z`, `quat_axis_x`, `quat_axis_y`, `quat_axis_z`].
-    """
-    # Should be in qw, qx, qy, qz
-    _quat = quat.copy()
-    if len(_quat.shape) < 2:
-        _quat = np.expand_dims(_quat, 0)
-    assert _quat.shape[1] == 4
-    angle = np.arccos(_quat[:, [0]]) * 2
-    xyz = _quat[:, 1:]
-    xyz[np.squeeze(np.abs(np.sin(angle / 2))) >= 1e-5] = (xyz / np.sin(angle / 2))[
-        np.squeeze(np.abs(np.sin(angle / 2))) >= 1e-5
-    ]
-    return np.concatenate([np.sin(angle), np.cos(angle), xyz], axis=-1)
-
-
-def point_quat2quat(quat: npt.NDArray[Any]) -> npt.NDArray[Any]:
-    """Convert 2D points on the unit circle for each axis to quaternions.
-
-    Args:
-        quat: A quaternion with its angle expressed as 2D points on the unit circle for each axis in 3D space, stored as
-            [`sin_x`, `sin_y`, `sin_z`, `cos_x`, `cos_y`, `cos_z`, `quat_axis_x`, `quat_axis_y`, `quat_axis_z`].
-            Can optionally have 1 batch dimension.
-
-    Returns:
-        The quaternion with its angle expressed as a scalar.
-    """
-    _quat = quat.copy()
-    if len(_quat.shape) < 2:
-        _quat = np.expand_dims(_quat, 0)
-    assert _quat.shape[1] == 5
-    angle = np.arctan(_quat[:, [0]] / _quat[:, [1]])
-    qw = np.cos(angle / 2)
-
-    qxyz = _quat[:, 2:]
-    qxyz[np.squeeze(np.abs(np.sin(angle / 2))) >= 1e-5] = (qxyz * np.sin(angle / 2))[
-        np.squeeze(np.abs(np.sin(angle / 2))) >= 1e-5
-    ]
-    return np.concatenate([qw, qxyz], axis=-1)
-
-
-def normalize_angles(angles: npt.NDArray[Any]) -> npt.NDArray[Any]:
-    """Puts angles in [-pi, pi] range."""
-    angles = angles.copy()
-    if angles.size > 0:
-        angles = (angles + np.pi) % (2 * np.pi) - np.pi
-        assert -np.pi - 1e-6 <= angles.min() and angles.max() <= np.pi + 1e-6
-    return angles
-
-
-def round_to_straight_angles(angles: npt.NDArray[Any]) -> npt.NDArray[Any]:
-    """Returns closest angle modulo 90 degrees."""
-    angles = np.round(angles / (np.pi / 2)) * (np.pi / 2)
-    return normalize_angles(angles)
-
-
-def get_parallel_rotations() -> list[npt.NDArray[Any]]:
-    mult90 = [0, np.pi / 2, -np.pi / 2, np.pi]
-    parallel_rotations: list[npt.NDArray] = []
-    for euler in itertools.product(mult90, repeat=3):
-        canonical = mat2euler(euler2mat(euler))
-        canonical = np.round(canonical / (np.pi / 2))
-        if canonical[0] == -2:
-            canonical[0] = 2
-        if canonical[2] == -2:
-            canonical[2] = 2
-        canonical *= np.pi / 2
-        if all([(canonical != rot).any() for rot in parallel_rotations]):
-            parallel_rotations.append(canonical)
-    assert len(parallel_rotations) == 24
-    return parallel_rotations
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+    
+    return np.array([w, x, y, z])
