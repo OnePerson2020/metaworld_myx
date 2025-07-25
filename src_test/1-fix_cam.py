@@ -1,5 +1,5 @@
 import gymnasium as gym
-import metaworld
+import ppo_test
 import time
 
 def inspect_env_structure(env):
@@ -158,7 +158,7 @@ def create_camera_wrapper(env_name, camera_config=None):
             return result
     
     # 创建基础环境
-    base_env = metaworld.make_mt_envs(
+    base_env = ppo_test.make_mt_envs(
         env_name,
         render_mode='human',
         width=1080,
@@ -180,7 +180,7 @@ if __name__ == "__main__":
     try:
         env = create_camera_wrapper('peg-insert-side-v3', camera_config)
         
-        from metaworld.policies import SawyerPegInsertionSideV3Policy
+        from ppo_test.policies import SawyerPegInsertionSideV3Policy
         policy = SawyerPegInsertionSideV3Policy()
         
         obs, info = env.reset()

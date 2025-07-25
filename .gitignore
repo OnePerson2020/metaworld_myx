@@ -12,7 +12,7 @@ venv.bak/
 
 *.stl
 *.png
-# metaworld-specific stuff below this line
+
 MUJOCO_LOG.TXT
 
 # Other IDEs and editors

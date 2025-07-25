@@ -1,8 +1,6 @@
-## 文件结构
-
 ```
 📁 .
-  📁 metaworld
+  📁 ppo_test
     📁 policies
       📄 __init__.py
       📄 action.py
@@ -31,12 +29,12 @@
 
 ## 源文件
 
-### metaworld/policies/__init__.py
+### ppo_test/policies/__init__.py
 
-*大小: 282 B | Token: 78*
+*大小: 281 B | Token: 78*
 
 ```python
-from metaworld.policies.sawyer_peg_insertion_side_v3_policy import (
+from ppo_test.policies.sawyer_peg_insertion_side_v3_policy import (
     SawyerPegInsertionSideV3Policy,
 )
 
@@ -52,7 +50,7 @@ __all__ = [
 ]
 ```
 
-### metaworld/policies/action.py
+### ppo_test/policies/action.py
 
 *大小: 854 B | Token: 235*
 
@@ -89,7 +87,7 @@ class Action:
         self.array = action
 ```
 
-### metaworld/policies/policy.py
+### ppo_test/policies/policy.py
 
 *大小: 2.3 KB | Token: 647*
 
@@ -178,11 +176,13 @@ class Policy(abc.ABC):
         raise NotImplementedError
 ```
 
-### metaworld/policies/sawyer_peg_insertion_side_v3_policy.py
+### ppo_test/policies/sawyer_peg_insertion_side_v3_policy.py
 
-*大小: 2.7 KB | Token: 756*
+*大小: 3.2 KB | Token: 901*
 
 ```python
+# metaworld/policies/sawyer_peg_insertion_side_v3_policy.py
+
 from __future__ import annotations
 
 from typing import Any
@@ -190,36 +190,51 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from metaworld.policies.action import Action
-from metaworld.policies.policy import Policy, assert_fully_parsed, move
+from ppo_test.policies.action import Action
+from ppo_test.policies.policy import Policy, assert_fully_parsed, move
 
 
 class SawyerPegInsertionSideV3Policy(Policy):
     @staticmethod
     @assert_fully_parsed
     def _parse_obs(obs: npt.NDArray[np.float64]) -> dict[str, npt.NDArray[np.float64]]:
+        # Current observation breakdown:
+        # 0-2: hand_pos (3)
+        # 3-6: quat_hand (4)
+        # 7: gripper_distance_apart (1)
+        # 8-10: pegHead_force (3)
+        # 11-13: peg_pos (3)        
+        # 14-17: peg_rot (4)        
+        # 18-24: unused_info_curr_obs (7)
+        # Total curr_obs = 3 + 4 + 1 + 3 + 3 + 4 + 7 = 25
+
+        # 25-49: _prev_obs (25)
+        # 50-52: goal_pos (3)
+        # Total observation length = 53
+
         return {
             "hand_pos": obs[:3],
             "quat_hand": obs[3:7],
             "gripper_distance_apart": obs[7],
-            "peg_pos": obs[8:11],
-            "peg_rot": obs[11:15],
-            "unused_info_curr_obs": obs[15:22],
-            "_prev_obs": obs[22:44],
-            "goal_pos": obs[-3:],
+            "pegHead_force": obs[8:11],       
+            "peg_pos": obs[11:14],            
+            "peg_rot": obs[14:18],            
+            "unused_info_curr_obs": obs[18:25],
+            "_prev_obs": obs[25:50],          
+            "goal_pos": obs[-3:],             
         }
 
     def get_action(self, obs: npt.NDArray[np.float64]) -> npt.NDArray[np.float32]:
         o_d = self._parse_obs(obs)
 
         # Action is now 7 dimensions: [delta_pos_x, delta_pos_y, delta_pos_z, delta_rot_x, delta_rot_y, delta_rot_z, gripper_effort]
-        action = Action(7) # Initialize Action with 7 dimensions
+        action = Action(7)
 
         # Calculate delta_pos
         delta_pos = move(o_d["hand_pos"], to_xyz=self._desired_pos(o_d), p=25.0)
         
         # For now, set delta_rot to zero. This can be expanded later if rotation control is needed.
-        delta_rot = np.zeros(3) 
+        delta_rot = np.ones(3) 
 
         # Calculate gripper_effort
         gripper_effort = self._grab_effort(o_d)
@@ -228,7 +243,7 @@ class SawyerPegInsertionSideV3Policy(Policy):
         full_action = np.hstack((delta_pos, delta_rot, gripper_effort))
         action.set_action(full_action)
 
-        return action.array.astype(np.float32) # Ensure the return type is float32
+        return action.array.astype(np.float32)
 
     @staticmethod
     def _desired_pos(o_d: dict[str, npt.NDArray[np.float64]]) -> npt.NDArray[Any]:
@@ -262,7 +277,7 @@ class SawyerPegInsertionSideV3Policy(Policy):
             return 0.6
 ```
 
-### metaworld/utils/reward_utils.py
+### ppo_test/utils/reward_utils.py
 
 *大小: 8.2 KB | Token: 2.3K*
 
@@ -513,7 +528,7 @@ def hamacher_product(a: float, b: float) -> float:
     return h_prod
 ```
 
-### metaworld/utils/rotation.py
+### ppo_test/utils/rotation.py
 
 *大小: 2.7 KB | Token: 758*
 
@@ -620,7 +635,7 @@ def quat_multiply(q1: npt.NDArray[np.float64], q2: npt.NDArray[np.float64]) -> n
     return np.array([w, x, y, z])
 ```
 
-### metaworld/xml/basic_scene.xml
+### ppo_test/xml/basic_scene.xml
 
 *大小: 3.1 KB | Token: 806*
 
@@ -692,7 +707,7 @@ def quat_multiply(q1: npt.NDArray[np.float64], q2: npt.NDArray[np.float64]) -> n
 </mujocoinclude>
 ```
 
-### metaworld/xml/peg_block_dependencies.xml
+### ppo_test/xml/peg_block_dependencies.xml
 
 *大小: 1.2 KB | Token: 318*
 
@@ -730,7 +745,7 @@ def quat_multiply(q1: npt.NDArray[np.float64], q2: npt.NDArray[np.float64]) -> n
 </mujocoinclude>
 ```
 
-### metaworld/xml/peg_block.xml
+### ppo_test/xml/peg_block.xml
 
 *大小: 1.3 KB | Token: 340*
 
@@ -755,7 +770,7 @@ def quat_multiply(q1: npt.NDArray[np.float64], q2: npt.NDArray[np.float64]) -> n
 </mujocoinclude>
 ```
 
-### metaworld/xml/peg_insert_dependencies.xml
+### ppo_test/xml/peg_insert_dependencies.xml
 
 *大小: 1006 B | Token: 252*
 
@@ -784,9 +799,9 @@ def quat_multiply(q1: npt.NDArray[np.float64], q2: npt.NDArray[np.float64]) -> n
 </mujocoinclude>
 ```
 
-### metaworld/xml/sawyer_peg_insertion_side.xml
+### ppo_test/xml/sawyer_peg_insertion_side.xml
 
-*大小: 1.3 KB | Token: 345*
+*大小: 1.4 KB | Token: 366*
 
 ```xml
 <mujoco>
@@ -822,10 +837,15 @@ def quat_multiply(q1: npt.NDArray[np.float64], q2: npt.NDArray[np.float64]) -> n
     <equality>
         <weld body1="mocap" body2="hand" solref="0.02 1"></weld>
     </equality>
+
+    <sensor>
+        <force name="pegHead_force" site="pegHead"/>
+        </sensor>
+
 </mujoco>
 ```
 
-### metaworld/xml/xyz_base_dependencies.xml
+### ppo_test/xml/xyz_base_dependencies.xml
 
 *大小: 1.4 KB | Token: 366*
 
@@ -867,7 +887,7 @@ def quat_multiply(q1: npt.NDArray[np.float64], q2: npt.NDArray[np.float64]) -> n
 </mujocoinclude>
 ```
 
-### metaworld/xml/xyz_base.xml
+### ppo_test/xml/xyz_base.xml
 
 *大小: 19.1 KB | Token: 5.4K*
 
@@ -1099,13 +1119,11 @@ def quat_multiply(q1: npt.NDArray[np.float64], q2: npt.NDArray[np.float64]) -> n
 </mujocoinclude>
 ```
 
-### metaworld/__init__.py
+### ppo_test/__init__.py
 
-*大小: 19.8 KB | Token: 5.6K*
+*大小: 19.7 KB | Token: 5.6K*
 
 ```python
-"""The public-facing Metaworld API."""
-
 from __future__ import annotations
 
 import abc
@@ -1121,15 +1139,15 @@ import numpy.typing as npt
 # noqa: D104
 from gymnasium.envs.registration import register
 
-import metaworld.env_dict as _env_dict
-from metaworld.env_dict import (
+import ppo_test.env_dict as _env_dict
+from ppo_test.env_dict import (
     ALL_V3_ENVIRONMENTS,
     ALL_V3_ENVIRONMENTS_GOAL_HIDDEN,
     ALL_V3_ENVIRONMENTS_GOAL_OBSERVABLE,
 )
-from metaworld.sawyer_xyz_env import SawyerXYZEnv 
-from metaworld.types import Task 
-from metaworld.wrappers import (
+from ppo_test.sawyer_xyz_env import SawyerXYZEnv 
+from ppo_test.types import Task 
+from ppo_test.wrappers import (
     AutoTerminateOnSuccessWrapper,
     CheckpointWrapper,
     NormalizeRewardsExponential,
@@ -1735,7 +1753,7 @@ register_mw_envs()
 __all__: list[str] = []
 ```
 
-### metaworld/asset_path_utils.py
+### ppo_test/asset_path_utils.py
 
 *大小: 532 B | Token: 147*
 
@@ -1762,7 +1780,7 @@ def full_V3_path_for(file_name: str) -> str:
     return str(ENV_ASSET_DIR_V3 / file_name)
 ```
 
-### metaworld/env_dict.py
+### ppo_test/env_dict.py
 
 *大小: 5.8 KB | Token: 1.6K*
 
@@ -1782,8 +1800,8 @@ import numpy as np
 from typing_extensions import TypeAlias
 
 # from metaworld import envs
-from metaworld.sawyer_xyz_env import SawyerXYZEnv
-from metaworld.sawyer_peg_insertion_side_v3 import SawyerPegInsertionSideEnvV3
+from ppo_test.sawyer_xyz_env import SawyerXYZEnv
+from ppo_test.sawyer_peg_insertion_side_v3 import SawyerPegInsertionSideEnvV3
 
 # Utils
 
@@ -1955,7 +1973,7 @@ ML1_V3 = _get_train_test_env_dict(
 ML1_args_kwargs = _get_args_kwargs(ALL_V3_ENVIRONMENTS, ML1_V3["train"])
 ```
 
-### metaworld/evaluation.py
+### ppo_test/evaluation.py
 
 *大小: 5.5 KB | Token: 1.5K*
 
@@ -2140,11 +2158,13 @@ class Timestep(NamedTuple):
     aux_policy_outputs: dict[str, npt.NDArray]
 ```
 
-### metaworld/sawyer_peg_insertion_side_v3.py
+### ppo_test/sawyer_peg_insertion_side_v3.py
 
-*大小: 9.0 KB | Token: 2.5K*
+*大小: 9.7 KB | Token: 2.7K*
 
 ```python
+# metaworld/sawyer_peg_insertion_side_v3.py
+
 from __future__ import annotations
 
 from typing import Any
@@ -2154,10 +2174,10 @@ import numpy.typing as npt
 from gymnasium.spaces import Box
 from scipy.spatial.transform import Rotation
 
-from metaworld.asset_path_utils import full_V3_path_for
-from metaworld.sawyer_xyz_env import RenderMode, SawyerXYZEnv
-from metaworld.types import InitConfigDict
-from metaworld.utils import reward_utils
+from ppo_test.asset_path_utils import full_V3_path_for
+from ppo_test.sawyer_xyz_env import RenderMode, SawyerXYZEnv
+from ppo_test.types import InitConfigDict
+from ppo_test.utils import reward_utils
 
 
 class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
@@ -2215,16 +2235,23 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         self.liftThresh = 0.11
         self.insertion_phase = "approach"  # approach, align, insert
 
+        self.pegHead_force_id = self.model.sensor("pegHead_force").id
+
     @property
     def model_name(self) -> str:
         return full_V3_path_for("sawyer_peg_insertion_side.xml")
+
+    def _get_pegHead_force(self) -> npt.NDArray[np.float64]:
+        """获取pegHead所受的力 (Fx, Fy, Fz)."""
+        # MuJoCo force sensors output a 3D vector
+        return self.data.sensordata[self.pegHead_force_id : self.pegHead_force_id + 3]
 
     @SawyerXYZEnv._Decorators.assert_task_is_set
     def evaluate_state(
         self, obs: npt.NDArray[np.float64], action: npt.NDArray[np.float32]
     ) -> tuple[float, dict[str, Any]]:
-        # Updated observation parsing for new 47-dimensional observation space
-        # obs structure: hand_pos(3) + quat_hand(4) + gripper_distance_apart(1) + peg_pos(3) + peg_rot(4) + unused_info(7) + _prev_obs(22) + goal_pos(3) = 47
+        # Updated observation parsing for new 53-dimensional observation space
+        # obs structure: hand_pos(3) + quat_hand(4) + gripper_distance_apart(1) + peg_pos(3) + peg_rot(4) + force(3)  + unused_info(7) + _prev_obs(25) + goal_pos(3) = 53
         obj = obs[8:11]  # peg_pos, index changed from 4:7 to 8:11
 
         (
@@ -2246,6 +2273,13 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         success = float(obj_to_target <= 0.07)
         near_object = float(tcp_to_obj <= 0.03)
 
+        # Get pegHead force, magnitude, and direction
+        pegHead_force = self._get_pegHead_force()
+        force_magnitude = np.linalg.norm(pegHead_force)
+        # Avoid division by zero if force is (0,0,0)
+        force_direction = pegHead_force / (force_magnitude + 1e-8) if force_magnitude > 1e-8 else np.zeros_like(pegHead_force)
+
+
         info = {
             "success": success,
             "near_object": near_object,
@@ -2255,6 +2289,9 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             "obj_to_target": obj_to_target,
             "unscaled_reward": reward,
             "insertion_phase": self.insertion_phase,
+            "pegHead_force": pegHead_force,             # Raw force vector
+            "pegHead_force_magnitude": force_magnitude, # Force magnitude
+            "pegHead_force_direction": force_direction, # Force direction (unit vector)
         }
 
         return reward, info
@@ -2281,19 +2318,9 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         self.objHeight = self.get_body_com("peg").copy()[2]
         self.heightTarget = self.objHeight + self.liftThresh
 
-        self.maxPlacingDist = (
-            np.linalg.norm(
-                np.array(
-                    [self.obj_init_pos[0], self.obj_init_pos[1], self.heightTarget]
-                )
-                - np.array(self._target_pos)
-            )
-            + self.heightTarget
-        )
-
         # 重置插入阶段
         self.insertion_phase = "approach"
-        
+                
         return self._get_obs()
 
     def compute_reward(
@@ -2301,8 +2328,8 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
     ) -> tuple[float, float, float, float, float, float, float, float]:
         assert self._target_pos is not None and self.obj_init_pos is not None
         tcp = self.tcp_center
-        # Updated observation parsing for new 47-dimensional observation space
-        obj = obs[8:11]  # peg_pos, index changed from 4:7 to 8:11
+        # Updated observation parsing for new 53-dimensional observation space
+        obj = obs[8:11]  # peg_pos
         obj_head = self._get_site_pos("pegHead")
         tcp_opened: float = obs[7]  # gripper_distance_apart, index changed from 3 to 7
         target = self._target_pos
@@ -2409,12 +2436,12 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         }
 ```
 
-### metaworld/sawyer_xyz_env.py
+### ppo_test/sawyer_xyz_env.py
 
 *大小: 34.1 KB | Token: 9.6K*
 
 ```python
-"""Base classes for all the envs."""
+# metaworld/sawyer_xyz_env.py
 
 from __future__ import annotations
 
@@ -2432,8 +2459,8 @@ from gymnasium.utils import seeding
 from gymnasium.utils.ezpickle import EzPickle
 from typing_extensions import TypeAlias
 
-from metaworld.types import XYZ, EnvironmentStateDict, ObservationDict, Task
-from metaworld.utils import reward_utils, rotation
+from ppo_test.types import XYZ, EnvironmentStateDict, ObservationDict, Task
+from ppo_test.utils import reward_utils, rotation
 
 RenderMode: TypeAlias = "Literal['human', 'rgb_array', 'depth_array']"
 
@@ -2680,11 +2707,11 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         # in this initiation of _prev_obs are correct. That being said, it
         # doesn't seem to matter (it will only effect frame-stacking for the
         # very first observation)
-        # The observation size is 3 (pos) + 4 (quat) + 1 (gripper) + 14 (obj_padded) = 22
-        # Stacked observation is 22 * 2 + 3 (goal) = 47
+        # The observation size is 3 (pos) + 4 (quat) + 1 (gripper) + 3 (force) + 14 (obj_padded) = 25
+        # Stacked observation is 25 * 2 + 3 (goal) = 53
         self.init_qpos = np.copy(self.data.qpos)
         self.init_qvel = np.copy(self.data.qvel)
-        self._prev_obs = np.zeros(22, dtype=np.float64)
+        self._prev_obs = np.zeros(25, dtype=np.float64)
 
         self.task_name = self.__class__.__name__
 
@@ -2789,7 +2816,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         """
         qpos = self.data.qpos.flat.copy()
         qvel = self.data.qvel.flat.copy()
-        qpos[9:12] = pos.copy()
+        qpos[9:12] = pos.copy() # 前 9 个分别对应 7 个关节角度和 2 个夹爪的控制量
         qvel[9:15] = 0
         self.set_state(qpos, qvel)
 
@@ -2911,7 +2938,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         Note: The goal's position is *not* included in this.
 
         Returns:
-            The flat observation array (18 elements)
+            The flat observation array (18 elements + force data)
         """
 
         pos_hand = self.get_endeff_pos()
@@ -2942,37 +2969,12 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         obs_obj_padded[: len(obj_pos) + len(obj_quat)] = np.hstack(
             [np.hstack((pos, quat)) for pos, quat in zip(obj_pos_split, obj_quat_split)]
         )
-        return np.hstack((pos_hand, quat_hand, gripper_distance_apart, obs_obj_padded)) # Include quat_hand
+        try:
+            pegHead_force = self._get_pegHead_force()
+        except NotImplementedError:
+            pegHead_force = np.zeros(3)
+        return np.hstack((pos_hand, quat_hand, gripper_distance_apart, pegHead_force, obs_obj_padded))
 
-    def _get_obs(self) -> npt.NDArray[np.float64]:
-        """Frame stacks `_get_curr_obs_combined_no_goal()` and concatenates the goal position to form a single flat observation.
-
-        Returns:
-            The flat observation array (47 elements)
-        """
-        # do frame stacking
-        pos_goal = self._get_pos_goal()
-        if self._partially_observable:
-            pos_goal = np.zeros_like(pos_goal)
-        curr_obs = self._get_curr_obs_combined_no_goal()
-        # do frame stacking
-        obs = np.hstack((curr_obs, self._prev_obs, pos_goal))
-        self._prev_obs = curr_obs
-        return obs
-
-    def _get_obs_dict(self) -> ObservationDict:
-        obs = self._get_obs()
-        # The state_achieved_goal should be the end-effector position (3) + quaternion (4) = 7 elements
-        # The current observation is pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + obs_obj_padded (14) = 22
-        # The previous observation is 22 elements
-        # The goal is 3 elements
-        # Total observation is 22 + 22 + 3 = 47
-        # state_achieved_goal should be the current end-effector pos and quat, which are the first 7 elements of curr_obs
-        return dict(
-            state_observation=obs,
-            state_desired_goal=self._get_pos_goal(),
-            state_achieved_goal=obs[:7], # Updated to reflect hand pos and quat
-        )
 
     @cached_property
     def sawyer_observation_space(self) -> Box:
@@ -2991,33 +2993,40 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         gripper_low = -1.0
         gripper_high = +1.0
         
-        # Current observation: pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + obs_obj_padded (14) = 22
-        # Previous observation: 22
+        force_low = np.full(3, -np.inf, dtype=np.float64)
+        force_high = np.full(3, np.inf, dtype=np.float64)
+
+        # Current observation: pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + obs_obj_padded (14) + pegHead_force (3) = 25
+        # Previous observation: 25
         # Goal: 3
-        # Total: 22 + 22 + 3 = 47
+        # Total: 25 + 25 + 3 = 53
         return Box(
             np.hstack(
                 (
-                    self._HAND_POS_SPACE.low, # Changed to _HAND_POS_SPACE
-                    self._HAND_QUAT_SPACE.low, # Added _HAND_QUAT_SPACE
+                    self._HAND_POS_SPACE.low, 
+                    self._HAND_QUAT_SPACE.low,
                     gripper_low,
+                    force_low,
                     obj_low,
-                    self._HAND_POS_SPACE.low, # Changed to _HAND_POS_SPACE
-                    self._HAND_QUAT_SPACE.low, # Added _HAND_QUAT_SPACE
+                    self._HAND_POS_SPACE.low, 
+                    self._HAND_QUAT_SPACE.low,
                     gripper_low,
+                    force_low,
                     obj_low,
                     goal_low,
                 )
             ),
             np.hstack(
                 (
-                    self._HAND_POS_SPACE.high, # Changed to _HAND_POS_SPACE
-                    self._HAND_QUAT_SPACE.high, # Added _HAND_QUAT_SPACE
+                    self._HAND_POS_SPACE.high,
+                    self._HAND_QUAT_SPACE.high,
                     gripper_high,
+                    force_high,
                     obj_high,
-                    self._HAND_POS_SPACE.high, # Changed to _HAND_POS_SPACE
-                    self._HAND_QUAT_SPACE.high, # Added _HAND_QUAT_SPACE
+                    self._HAND_POS_SPACE.high,
+                    self._HAND_QUAT_SPACE.high,
                     gripper_high,
+                    force_high,
                     obj_high,
                     goal_high,
                 )
@@ -3025,6 +3034,29 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             dtype=np.float64,
         )
 
+    def _get_obs(self) -> npt.NDArray[np.float64]:
+        pos_goal = self._get_pos_goal()
+        if self._partially_observable:
+            pos_goal = np.zeros_like(pos_goal)
+        curr_obs = self._get_curr_obs_combined_no_goal()
+        obs = np.hstack((curr_obs, self._prev_obs, pos_goal))
+        self._prev_obs = curr_obs
+        return obs
+
+    def _get_obs_dict(self) -> ObservationDict:
+        obs = self._get_obs()
+        # The state_achieved_goal should be the end-effector position (3) + quaternion (4) = 7 elements
+        # The current observation is pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + 3 (force) + obs_obj_padded (14) = 25
+        # The previous observation is 25 elements
+        # The goal is 3 elements
+        # Total observation is 25 + 25 + 3 = 53
+        # state_achieved_goal should be the current end-effector pos and quat, which are the first 7 elements of curr_obs
+        return dict(
+            state_observation=obs,
+            state_desired_goal=self._get_pos_goal(),
+            state_achieved_goal=obs[:7], # Updated to reflect hand pos and quat
+        )
+        
     @_Decorators.assert_task_is_set
     def step(
         self, action: npt.NDArray[np.float32]
@@ -3125,11 +3157,9 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         self.curr_path_length = 0
         self.reset_model()
         obs, info = super().reset()
-        assert obs is not None, "Observation should not be None after reset" # Added assertion
-        # Update _prev_obs and obs based on new observation size (22 for curr_obs)
-        self._prev_obs = obs[:22].copy()
-        obs[22:44] = self._prev_obs
-        obs = obs.astype(np.float64)
+        assert obs is not None, "Observation should not be None after reset"
+        curr_obs_len = self._HAND_POS_SPACE.shape[0] + self._HAND_QUAT_SPACE.shape[0] + 1 + 3 + self._obs_obj_max_len # 3 for force
+        self._prev_obs = obs[:curr_obs_len].copy()        
         return obs, info
 
     def _reset_hand(self, steps: int = 50) -> None:
@@ -3309,7 +3339,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         return caging_and_gripping
 ```
 
-### metaworld/types.py
+### ppo_test/types.py
 
 *大小: 1.2 KB | Token: 331*
 
@@ -3365,7 +3395,7 @@ class StickInitConfigDict(TypedDict):
     hand_init_pos: npt.NDArray[Any]
 ```
 
-### metaworld/wrappers.py
+### ppo_test/wrappers.py
 
 *大小: 11.6 KB | Token: 3.3K*
 
@@ -3379,8 +3409,8 @@ import numpy as np
 from gymnasium import Env
 from numpy.typing import NDArray
 
-from metaworld.sawyer_xyz_env import SawyerXYZEnv
-from metaworld.types import Task
+from ppo_test.sawyer_xyz_env import SawyerXYZEnv
+from ppo_test.types import Task
 
 
 class OneHotWrapper(gym.ObservationWrapper, gym.utils.RecordConstructorArgs):
