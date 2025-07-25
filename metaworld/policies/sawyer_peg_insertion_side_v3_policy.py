@@ -15,12 +15,12 @@ class SawyerPegInsertionSideV3Policy(Policy):
     def _parse_obs(obs: npt.NDArray[np.float64]) -> dict[str, npt.NDArray[np.float64]]:
         return {
             "hand_pos": obs[:3],
-            "quat_hand": obs[3:7], # New: hand quaternion
-            "gripper_distance_apart": obs[7], # Index changed
-            "peg_pos": obs[8:11], # Index changed
-            "peg_rot": obs[11:15], # Index changed
-            "unused_info_curr_obs": obs[15:22], # Index changed, size changed
-            "_prev_obs": obs[22:44], # Index changed, size changed
+            "quat_hand": obs[3:7],
+            "gripper_distance_apart": obs[7],
+            "peg_pos": obs[8:11],
+            "peg_rot": obs[11:15],
+            "unused_info_curr_obs": obs[15:22],
+            "_prev_obs": obs[22:44],
             "goal_pos": obs[-3:],
         }
 
