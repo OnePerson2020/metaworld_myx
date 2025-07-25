@@ -18,6 +18,9 @@ env.mujoco_renderer.viewer.cam.azimuth = 145
 done = False
 count = 0
 
+print("Initial observation shape:", obs.shape)
+print("Initial info:", info)
+
 while count < 500 and not done:
     # 渲染环境
     env.render()
@@ -25,7 +28,9 @@ while count < 500 and not done:
     action = policy.get_action(obs)
     # 执行动作
     obs, reward, terminated, truncated, info = env.step(action)
-
+    print(f"  PegHead Force Magnitude: {info.get('pegHead_force_magnitude', 'N/A'):.4f}")
+    print(f"  PegHead Force Direction: {info.get('pegHead_force_direction', 'N/A')}")
+    
     # 检查任务是否成功
     if info['success'] > 0.5:
         print("任务成功！")
@@ -35,5 +40,5 @@ while count < 500 and not done:
     count += 1
 
 print(f"最终信息: {info}")
-env.close()
+# env.close()
 

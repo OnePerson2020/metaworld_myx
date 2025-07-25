@@ -31,4 +31,9 @@
     <equality>
         <weld body1="mocap" body2="hand" solref="0.02 1"></weld>
     </equality>
+
+    <sensor>
+        <force name="pegHead_force" site="pegHead"/>
+        </sensor>
+
 </mujoco>

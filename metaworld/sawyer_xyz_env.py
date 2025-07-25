@@ -1,4 +1,4 @@
-"""Base classes for all the envs."""
+# metaworld/sawyer_xyz_env.py
 
 from __future__ import annotations
 
@@ -264,11 +264,11 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         # in this initiation of _prev_obs are correct. That being said, it
         # doesn't seem to matter (it will only effect frame-stacking for the
         # very first observation)
-        # The observation size is 3 (pos) + 4 (quat) + 1 (gripper) + 14 (obj_padded) = 22
-        # Stacked observation is 22 * 2 + 3 (goal) = 47
+        # The observation size is 3 (pos) + 4 (quat) + 1 (gripper) + 3 (force) + 14 (obj_padded) = 25
+        # Stacked observation is 25 * 2 + 3 (goal) = 53
         self.init_qpos = np.copy(self.data.qpos)
         self.init_qvel = np.copy(self.data.qvel)
-        self._prev_obs = np.zeros(22, dtype=np.float64)
+        self._prev_obs = np.zeros(25, dtype=np.float64)
 
         self.task_name = self.__class__.__name__
 
@@ -373,7 +373,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         """
         qpos = self.data.qpos.flat.copy()
         qvel = self.data.qvel.flat.copy()
-        qpos[9:12] = pos.copy()
+        qpos[9:12] = pos.copy() # 前 9 个分别对应 7 个关节角度和 2 个夹爪的控制量
         qvel[9:15] = 0
         self.set_state(qpos, qvel)
 
@@ -495,7 +495,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         Note: The goal's position is *not* included in this.
 
         Returns:
-            The flat observation array (18 elements)
+            The flat observation array (18 elements + force data)
         """
 
         pos_hand = self.get_endeff_pos()
@@ -526,37 +526,12 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         obs_obj_padded[: len(obj_pos) + len(obj_quat)] = np.hstack(
             [np.hstack((pos, quat)) for pos, quat in zip(obj_pos_split, obj_quat_split)]
         )
-        return np.hstack((pos_hand, quat_hand, gripper_distance_apart, obs_obj_padded)) # Include quat_hand
+        try:
+            pegHead_force = self._get_pegHead_force()
+        except NotImplementedError:
+            pegHead_force = np.zeros(3)
+        return np.hstack((pos_hand, quat_hand, gripper_distance_apart, pegHead_force, obs_obj_padded))
 
-    def _get_obs(self) -> npt.NDArray[np.float64]:
-        """Frame stacks `_get_curr_obs_combined_no_goal()` and concatenates the goal position to form a single flat observation.
-
-        Returns:
-            The flat observation array (47 elements)
-        """
-        # do frame stacking
-        pos_goal = self._get_pos_goal()
-        if self._partially_observable:
-            pos_goal = np.zeros_like(pos_goal)
-        curr_obs = self._get_curr_obs_combined_no_goal()
-        # do frame stacking
-        obs = np.hstack((curr_obs, self._prev_obs, pos_goal))
-        self._prev_obs = curr_obs
-        return obs
-
-    def _get_obs_dict(self) -> ObservationDict:
-        obs = self._get_obs()
-        # The state_achieved_goal should be the end-effector position (3) + quaternion (4) = 7 elements
-        # The current observation is pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + obs_obj_padded (14) = 22
-        # The previous observation is 22 elements
-        # The goal is 3 elements
-        # Total observation is 22 + 22 + 3 = 47
-        # state_achieved_goal should be the current end-effector pos and quat, which are the first 7 elements of curr_obs
-        return dict(
-            state_observation=obs,
-            state_desired_goal=self._get_pos_goal(),
-            state_achieved_goal=obs[:7], # Updated to reflect hand pos and quat
-        )
 
     @cached_property
     def sawyer_observation_space(self) -> Box:
@@ -575,33 +550,40 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         gripper_low = -1.0
         gripper_high = +1.0
         
-        # Current observation: pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + obs_obj_padded (14) = 22
-        # Previous observation: 22
+        force_low = np.full(3, -np.inf, dtype=np.float64)
+        force_high = np.full(3, np.inf, dtype=np.float64)
+
+        # Current observation: pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + obs_obj_padded (14) + pegHead_force (3) = 25
+        # Previous observation: 25
         # Goal: 3
-        # Total: 22 + 22 + 3 = 47
+        # Total: 25 + 25 + 3 = 53
         return Box(
             np.hstack(
                 (
-                    self._HAND_POS_SPACE.low, # Changed to _HAND_POS_SPACE
-                    self._HAND_QUAT_SPACE.low, # Added _HAND_QUAT_SPACE
+                    self._HAND_POS_SPACE.low, 
+                    self._HAND_QUAT_SPACE.low,
                     gripper_low,
+                    force_low,
                     obj_low,
-                    self._HAND_POS_SPACE.low, # Changed to _HAND_POS_SPACE
-                    self._HAND_QUAT_SPACE.low, # Added _HAND_QUAT_SPACE
+                    self._HAND_POS_SPACE.low, 
+                    self._HAND_QUAT_SPACE.low,
                     gripper_low,
+                    force_low,
                     obj_low,
                     goal_low,
                 )
             ),
             np.hstack(
                 (
-                    self._HAND_POS_SPACE.high, # Changed to _HAND_POS_SPACE
-                    self._HAND_QUAT_SPACE.high, # Added _HAND_QUAT_SPACE
+                    self._HAND_POS_SPACE.high,
+                    self._HAND_QUAT_SPACE.high,
                     gripper_high,
+                    force_high,
                     obj_high,
-                    self._HAND_POS_SPACE.high, # Changed to _HAND_POS_SPACE
-                    self._HAND_QUAT_SPACE.high, # Added _HAND_QUAT_SPACE
+                    self._HAND_POS_SPACE.high,
+                    self._HAND_QUAT_SPACE.high,
                     gripper_high,
+                    force_high,
                     obj_high,
                     goal_high,
                 )
@@ -609,6 +591,29 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             dtype=np.float64,
         )
 
+    def _get_obs(self) -> npt.NDArray[np.float64]:
+        pos_goal = self._get_pos_goal()
+        if self._partially_observable:
+            pos_goal = np.zeros_like(pos_goal)
+        curr_obs = self._get_curr_obs_combined_no_goal()
+        obs = np.hstack((curr_obs, self._prev_obs, pos_goal))
+        self._prev_obs = curr_obs
+        return obs
+
+    def _get_obs_dict(self) -> ObservationDict:
+        obs = self._get_obs()
+        # The state_achieved_goal should be the end-effector position (3) + quaternion (4) = 7 elements
+        # The current observation is pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + 3 (force) + obs_obj_padded (14) = 25
+        # The previous observation is 25 elements
+        # The goal is 3 elements
+        # Total observation is 25 + 25 + 3 = 53
+        # state_achieved_goal should be the current end-effector pos and quat, which are the first 7 elements of curr_obs
+        return dict(
+            state_observation=obs,
+            state_desired_goal=self._get_pos_goal(),
+            state_achieved_goal=obs[:7], # Updated to reflect hand pos and quat
+        )
+        
     @_Decorators.assert_task_is_set
     def step(
         self, action: npt.NDArray[np.float32]
@@ -709,11 +714,9 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         self.curr_path_length = 0
         self.reset_model()
         obs, info = super().reset()
-        assert obs is not None, "Observation should not be None after reset" # Added assertion
-        # Update _prev_obs and obs based on new observation size (22 for curr_obs)
-        self._prev_obs = obs[:22].copy()
-        obs[22:44] = self._prev_obs
-        obs = obs.astype(np.float64)
+        assert obs is not None, "Observation should not be None after reset"
+        curr_obs_len = self._HAND_POS_SPACE.shape[0] + self._HAND_QUAT_SPACE.shape[0] + 1 + 3 + self._obs_obj_max_len # 3 for force
+        self._prev_obs = obs[:curr_obs_len].copy()        
         return obs, info
 
     def _reset_hand(self, steps: int = 50) -> None:
