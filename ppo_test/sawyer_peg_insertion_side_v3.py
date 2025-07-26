@@ -25,7 +25,6 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         camera_id: int | None = None,
         height: int = 480,
         width: int = 480,
-        reward_function_version: str | None = None,
     ) -> None:
 
         hand_low = (-0.5, 0.40, 0.05)
@@ -43,19 +42,14 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             camera_id=camera_id,
             height=height,
             width=width,
-            reward_function_version=reward_function_version,
         )
-
-        self.init_config: InitConfigDict = {
-            "obj_init_pos": np.array([0, 0.6, 0.02]),
-            "hand_init_pos": np.array([0, 0.6, 0.2]),
-        }
 
         self.goal = np.array([-0.3, 0.6, 0.0])
 
-        self.obj_init_pos = self.init_config["obj_init_pos"]
-        self.hand_init_pos = self.init_config["hand_init_pos"]
-
+        self.obj_init_pos = np.array([0, 0.6, 0.02])
+        self.hand_init_pos = np.array([0, 0.6, 0.2])
+        self.hand_init_quat = Rotation.from_euler('xyz', [0,45,0], degrees=True).as_quat()[[1, 2, 3, 0]]
+        
         self._random_reset_space = Box(
             np.hstack((obj_low, goal_low)),
             np.hstack((obj_high, goal_high)),
@@ -68,7 +62,6 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         )
 
         self.liftThresh = 0.11
-        self.insertion_phase = "approach"  # approach, align, insert
 
         self.pegHead_force_id = self.model.sensor("pegHead_force").id
 
@@ -85,27 +78,40 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
     def evaluate_state(
         self, obs: npt.NDArray[np.float64], action: npt.NDArray[np.float32]
     ) -> tuple[float, dict[str, Any]]:
-        # Updated observation parsing for new 53-dimensional observation space
-        # obs structure: hand_pos(3) + quat_hand(4) + gripper_distance_apart(1) + peg_pos(3) + peg_rot(4) + force(3)  + unused_info(7) + _prev_obs(25) + goal_pos(3) = 53
-        obj = obs[8:11]  # peg_pos, index changed from 4:7 to 8:11
+        # obs structure: hand_pos(3) + quat_hand(4) + gripper_distance_apart(1) + force(3) + peg_pos(3) + peg_rot(4) + unused_info(7) + _prev_obs(25) + goal_pos(3) = 53
+        obj = obs[11:14]
 
-        (
-            reward,
-            tcp_to_obj,
-            tcp_open,
-            obj_to_target,
-            grasp_reward,
-            in_place_reward,
-            collision_box_front,
-            ip_orig,
-        ) = self.compute_reward(action, obs)
+        assert self._target_pos is not None and self.obj_init_pos is not None
+        
+        # Updated observation parsing for new 53-dimensional observation space
+        obj = obs[11:14]
+        obj_head = self._get_site_pos("pegHead")
+        
+        tcp_opened: float = obs[7] 
+        tcp = self.tcp_center
+        
+        target = self._target_pos
+        
+        tcp_to_obj = float(np.linalg.norm(obj - tcp))
+        
+        reward, tcp_open, obj_to_target, grasp_reward, in_place_reward = self.compute_reward(action, obj, tcp_opened)
+        
         assert self.obj_init_pos is not None
         grasp_success = float(
             tcp_to_obj < 0.02
             and (tcp_open > 0)
             and (obj[2] - 0.01 > self.obj_init_pos[2])
         )
-        success = float(obj_to_target <= 0.07)
+        
+        success_arrive = float(
+            obj_to_target <= 0.07
+        )
+        
+        success = float(
+            success_arrive
+            and target[0] - obj_head[0] >= 0.05
+        )
+            
         near_object = float(tcp_to_obj <= 0.03)
 
         # Get pegHead force, magnitude, and direction
@@ -123,7 +129,6 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             "in_place_reward": in_place_reward,
             "obj_to_target": obj_to_target,
             "unscaled_reward": reward,
-            "insertion_phase": self.insertion_phase,
             "pegHead_force": pegHead_force,             # Raw force vector
             "pegHead_force_magnitude": force_magnitude, # Force magnitude
             "pegHead_force_direction": force_direction, # Force direction (unit vector)
@@ -152,27 +157,21 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
 
         self.objHeight = self.get_body_com("peg").copy()[2]
         self.heightTarget = self.objHeight + self.liftThresh
-
-        # 重置插入阶段
-        self.insertion_phase = "approach"
                 
         return self._get_obs()
 
     def compute_reward(
-        self, action: npt.NDArray[Any], obs: npt.NDArray[np.float64]
+        self, action: npt.NDArray[Any], obj: npt.NDArray[Any], tcp_opened: npt.NDArray[Any]
     ) -> tuple[float, float, float, float, float, float, float, float]:
-        assert self._target_pos is not None and self.obj_init_pos is not None
-        tcp = self.tcp_center
-        # Updated observation parsing for new 53-dimensional observation space
-        obj = obs[8:11]  # peg_pos
-        obj_head = self._get_site_pos("pegHead")
-        tcp_opened: float = obs[7]  # gripper_distance_apart, index changed from 3 to 7
-        target = self._target_pos
-        tcp_to_obj = float(np.linalg.norm(obj - tcp))
-        scale = np.array([1.0, 2.0, 2.0])
-        #  force agent to pick up object then insert
-        obj_to_target = float(np.linalg.norm((obj_head - target) * scale))
 
+        target = self._target_pos
+        tcp = self.tcp_center
+        obj_head = self._get_site_pos("pegHead")
+        scale = np.array([1.0, 2.0, 2.0])
+        
+        tcp_to_obj = float(np.linalg.norm(obj - tcp))
+        obj_to_target = float(np.linalg.norm((obj_head - target) * scale))
+        
         in_place_margin = float(
             np.linalg.norm((self.peg_head_pos_init - target) * scale)
         )
@@ -182,7 +181,6 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             margin=in_place_margin,
             sigmoid="long_tail",
         )
-        ip_orig = in_place
         brc_col_box_1 = self._get_site_pos("bottom_right_corner_collision_box_1")
         tlc_col_box_1 = self._get_site_pos("top_left_corner_collision_box_1")
 
@@ -236,13 +234,10 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
 
         return (
             reward,
-            tcp_to_obj,
             tcp_opened,
             obj_to_target,
             object_grasped,
-            in_place,
-            collision_boxes,
-            ip_orig,
+            in_place
         )
 
     def get_hole_info(self) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
@@ -259,7 +254,7 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         peg_quat = self._get_quat_objects()
         
         # 计算插入深度
-        insertion_depth = np.dot(peg_head_pos - hole_pos, np.array([0, -1, 0]))  # 假设hole朝向为-y方向
+        insertion_depth = np.dot(peg_head_pos - hole_pos, np.array([-1, 0, 0]))  # 假设hole朝向为-y方向
         
         return {
             "hole_pos": hole_pos,
@@ -267,5 +262,4 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             "peg_head_pos": peg_head_pos,
             "peg_quat": peg_quat,
             "insertion_depth": max(0, insertion_depth),
-            "insertion_phase": self.insertion_phase
         }

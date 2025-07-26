@@ -276,7 +276,6 @@ def _init_each_env(
     recurrent_info_in_obs: bool = False,
     normalize_reward_in_recurrent_info: bool = True,
     task_select: Literal["random", "pseudorandom"] = "random",
-    reward_function_version: Literal["v1", "v2"] = "v2",
     reward_normalization_method: Literal["gymnasium", "exponential"] | None = None,
     normalize_observations: bool = False,
     reward_alpha: float = 0.001,
@@ -287,7 +286,6 @@ def _init_each_env(
     height: int = 480,
 ) -> gym.Env:
     env: gym.Env = env_cls(
-        reward_function_version=reward_function_version,
         render_mode=render_mode,
         camera_name=camera_name,
         camera_id=camera_id,

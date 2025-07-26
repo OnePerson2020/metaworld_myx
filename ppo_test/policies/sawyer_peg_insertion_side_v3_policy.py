@@ -28,7 +28,6 @@ class SawyerPegInsertionSideV3Policy(Policy):
         # 25-49: _prev_obs (25)
         # 50-52: goal_pos (3)
         # Total observation length = 53
-
         return {
             "hand_pos": obs[:3],
             "quat_hand": obs[3:7],
@@ -49,10 +48,10 @@ class SawyerPegInsertionSideV3Policy(Policy):
 
         # Calculate delta_pos
         delta_pos = move(o_d["hand_pos"], to_xyz=self._desired_pos(o_d), p=25.0)
-        
+        # delta_pos = np.zeros(3) 
         # For now, set delta_rot to zero. This can be expanded later if rotation control is needed.
-        delta_rot = np.ones(3) 
-
+        delta_rot = np.zeros(3) 
+        # delta_rot[0] = 0.05
         # Calculate gripper_effort
         gripper_effort = self._grab_effort(o_d)
 

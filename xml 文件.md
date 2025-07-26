@@ -1,3 +1,277 @@
+## 文件结构
+
+```
+📁 .
+  📁 ppo_test
+    📁 xml
+      📄 basic_scene.xml
+      📄 peg_block_dependencies.xml
+      📄 peg_block.xml
+      📄 peg_insert_dependencies.xml
+      📄 sawyer_peg_insertion_side.xml
+      📄 xyz_base_dependencies.xml
+      📄 xyz_base.xml
+```
+
+## 源文件
+
+### ppo_test/xml/basic_scene.xml
+
+*大小: 3.1 KB | Token: 806*
+
+```xml
+<mujocoinclude>
+    <option timestep='0.0025' iterations="50" tolerance="1e-10" solver="Newton" jacobian="dense" cone="elliptic"/>
+
+    <asset>
+        <!-- night sky -->
+        <!-- <texture name="skybox" type="skybox" builtin="gradient" rgb1=".08 .09 .10" rgb2="0 0 0"
+               width="800" height="800" mark="random" markrgb=".8 .8 .8"/> -->
+        <texture type="skybox" builtin="gradient" rgb1=".50 .495 .48" rgb2=".50 .495 .48" width="32" height="32"/>
+        <texture name="T_table" type="cube" file="./textures/wood2.png"/>
+        <texture name="T_floor" type="2d" file="./textures/floor2.png"/>
+
+        <material name="basic_floor" texture="T_floor" texrepeat="12 12" shininess=".3" specular="0.5"
+                  reflectance="0.2"/>
+        <material name="table_wood" texture="T_table" shininess=".3" specular="0.5"/>
+        <material name="table_col" rgba="0.3 0.3 1.0 0.5" shininess="0" specular="0"/>
+
+        <mesh file="./table/tablebody.stl" name="tablebody" scale="1 1 1"/>
+        <mesh file="./table/tabletop.stl" name="tabletop" scale="1 1 1"/>
+    </asset>
+
+    <asset>
+        <texture name="T_wallmetal" type="cube" file="./textures/metal.png"/>
+        <material name="wall_metal" texture="T_wallmetal" shininess="1" reflectance="1" specular=".5"/>
+    </asset>
+
+    <visual>
+        <map fogstart="1.5" fogend="5" force="0.1" znear="0.01"/>
+        <quality shadowsize="4096" offsamples="4"/>
+
+        <headlight ambient="0.4 0.4 0.4"/>
+
+    </visual>
+
+    <worldbody>
+        <light castshadow="false" directional='true' diffuse='.3 .3 .3' specular='0.3 0.3 0.3' pos='-1 -1 1'
+               dir='1 1 -1'/>
+        <light directional='true' diffuse='.3 .3 .3' specular='0.3 0.3 0.3' pos='1 -1 1' dir='-1 1 -1'/>
+        <light castshadow="false" directional='true' diffuse='.3 .3 .3' specular='0.3 0.3 0.3' pos='0 1 1'
+               dir='0 -1 -1'/>
+        <body name="tablelink" pos="0 .6 0">
+            <geom material="table_wood" group="1" type="box" size=".7 .4 .027" pos="0 0 -.027" conaffinity="0"
+                  contype="0"/>
+            <geom material="table_wood" group="1" mesh="tablebody" pos="0 0 -0.65" type="mesh" conaffinity="0"
+                  contype="0"/>
+            <geom material="table_col" group="4" pos="0.0 0.0 -0.46" size="0.7 0.4 0.46" type="box" conaffinity="1"
+                  contype="0"/>
+        </body>
+
+        <body name="RetainingWall" pos="0.0 0.6 0.06">
+            <geom material="wall_metal" type="box" size=".7 .01 .06" pos="0. -0.39 0." conaffinity="1" condim="3"
+                  contype="0"/>
+            <geom material="wall_metal" type="box" size=".7 .01 .06" pos="0. 0.39 0." conaffinity="1" condim="3"
+                  contype="0"/>
+            <geom material="wall_metal" type="box" size=".01 .38 .06" pos="-.69 0. 0." conaffinity="1" condim="3"
+                  contype="0"/>
+            <geom material="wall_metal" type="box" size=".01 .38 .06" pos=".69 0. 0." conaffinity="1" condim="3"
+                  contype="0"/>
+        </body>
+
+        <geom name="floor" size="4 4 .1" pos="0 0 -.913" conaffinity="1" contype="1" type="plane" material="basic_floor"
+              condim="3"/>
+
+    </worldbody>
+
+</mujocoinclude>
+```
+
+### ppo_test/xml/peg_block_dependencies.xml
+
+*大小: 1.2 KB | Token: 318*
+
+```xml
+<mujocoinclude>
+    <compiler angle="radian" inertiafromgeom="auto" inertiagrouprange="4 5"/>
+    <asset>
+        <texture name="T_peg_block_wood" type="cube" file="./textures/wood1.png"/>
+
+      <material name="peg_block_col" rgba="0.3 0.3 1.0 0.5" shininess="0" specular="0"/>
+      <material name="peg_block_wood" texture="T_peg_block_wood" shininess="1" reflectance=".7" specular=".5"/>
+      <material name="peg_block_red" rgba=".55 0 0 1" shininess="1" reflectance=".7" specular=".5"/>
+
+    </asset>
+    <default>
+
+      <default class="peg_block_base">
+          <joint armature="0.001" damping="2" limited="true"/>
+          <geom conaffinity="0" contype="0" group="1" type="mesh"/>
+          <position ctrllimited="true" ctrlrange="0 1.57"/>
+          <default class="peg_block_viz">
+              <geom condim="4" type="mesh"/>
+          </default>
+          <default class="peg_block_col">
+              <geom conaffinity="1" condim="3" contype="1" group="4" material="peg_block_col" solimp="0.99 0.99 0.01" solref="0.01 1"/>
+          </default>
+      </default>
+    </default>
+
+    <asset>
+      <mesh file="./peg_block/block_inner.stl" name="block_inner"/>
+        <mesh file="./peg_block/block_outer.stl" name="block_outer"/>
+    </asset>
+
+</mujocoinclude>
+```
+
+### ppo_test/xml/peg_block.xml
+
+*大小: 1.3 KB | Token: 340*
+
+```xml
+<mujocoinclude>
+    <body childclass="peg_block_base">
+      <geom material="peg_block_red" mesh="block_inner" pos="0 0 0.095"/>
+      <geom material="peg_block_wood" mesh="block_outer" pos="0 0 0.1"/>
+      <geom class="peg_block_col" pos="0 0 0.195" size="0.09 0.1 0.005" type="box" mass="1000"/>
+      <geom class="peg_block_col" pos="0 0 0.05" size="0.09 0.096 0.05" type="box" mass="1000"/>
+      <geom class="peg_block_col" pos="-0.06 0 0.13" size="0.03 0.096 0.03" type="box" mass="1000"/>
+      <geom class="peg_block_col" pos="0.06 0 0.13" size="0.03 0.096 0.03" type="box" mass="1000"/>
+      <geom class="peg_block_col" pos="0 0 0.175" size="0.09 0.096 0.015" type="box" mass="1000"/>
+      <geom class="peg_block_col" pos="0.095 0 0.1" size="0.005 0.1 0.1" type="box" mass="1000"/>
+      <geom class="peg_block_col" pos="-0.095 0 0.1" size="0.005 0.1 0.1" type="box" mass="1000"/>
+      <site name="hole" pos="0 -.096 0.13" size="0.005" rgba="0 0.8 0 1"/>
+      <site name="bottom_right_corner_collision_box_1" pos="0.1 -0.11 0.01" size="0.0001"/>
+      <site name="top_left_corner_collision_box_1" pos="-0.1 -.15 0.096" size="0.0001"/>
+      <site name="bottom_right_corner_collision_box_2" pos="0.1 -0.11 0.16" size="0.0001"/>
+      <site name="top_left_corner_collision_box_2" pos="-0.1 -.17 0.19" size="0.0001"/>
+    </body>
+</mujocoinclude>
+```
+
+### ppo_test/xml/peg_insert_dependencies.xml
+
+*大小: 1006 B | Token: 252*
+
+```xml
+<mujocoinclude>
+    <compiler angle="radian" inertiafromgeom="auto" inertiagrouprange="4 5"/>
+    <asset>
+      <texture name="T_peg_wood" type="cube" file="./textures/wood1.png"/>
+
+      <material name="peg_col" rgba="0.3 0.3 1.0 0.5" shininess="0" specular="0"/>
+      <material name="peg_green" rgba="0 .5 0 1" shininess="1" reflectance=".7" specular=".5"/>
+      <material name="peg_black" rgba=".15 .15 .15 1" shininess="1" reflectance=".7" specular=".5"/>
+      <material name="peg_wood" rgba=".55 .55 .55 1" texture="T_peg_wood" shininess="1" reflectance=".7" specular=".5"/>
+    </asset>
+    <default>
+      <default class="peg_base">
+          <!-- <joint armature="0.001" damping="2"/> -->
+          <geom conaffinity="0" contype="0" group="1" type="mesh"/>
+          <default class="peg_col">
+              <geom conaffinity="1" condim="3" contype="1" group="4" material="peg_col" solimp="0.99 0.99 0.01" solref="0.01 1"/>
+          </default>
+
+      </default>
+    </default>
+
+</mujocoinclude>
+```
+
+### ppo_test/xml/sawyer_peg_insertion_side.xml
+
+*大小: 1.4 KB | Token: 366*
+
+```xml
+<mujoco>
+    <include file="./basic_scene.xml"/>
+    <include file="./peg_block_dependencies.xml"/>
+    <include file="./peg_insert_dependencies.xml"/>
+    <include file="./xyz_base_dependencies.xml"/>
+
+    <worldbody>
+      <include file="./xyz_base.xml"/>
+
+        <body name="peg" pos="0 0.6 0.03">
+          <inertial pos="0 0 0" mass="0.1" diaginertia="100000 100000 100000"/>
+          <geom name="peg" euler="0 1.57 0" size="0.015 0.015 0.12" type="box" mass=".1" rgba="0.3 1 0.3 1" conaffinity="1" contype="1" group="1"/>
+          <joint type="free" limited="false" damping="0.005"/>
+          <site name="pegHead" pos="-0.1 0 0" size="0.005" rgba="0.8 0 0 1"/>
+          <site name="pegEnd" pos="0.1 0 0" size="0.005" rgba="0.8 0 0 1"/>
+          <site name="pegGrasp" pos=".03 .0 .01" size="0.005" rgba="0.8 0 0 1"/>
+        </body>
+
+        <body name="box" euler="0 0 1.57" pos="-0.3 0.6 0">
+          <include file="./peg_block.xml"/>
+        </body>
+        <site name="goal" pos="0 0.6 0.05" size="0.01" rgba="0.8 0 0 1"/>
+
+    </worldbody>
+
+    <actuator>
+        <position ctrllimited="true" ctrlrange="-1 1" joint="r_close" kp="400"  user="1"/>
+        <position ctrllimited="true" ctrlrange="-1 1" joint="l_close" kp="400"  user="1"/>
+    </actuator>
+
+    <equality>
+        <weld body1="mocap" body2="hand" solref="0.02 1"></weld>
+    </equality>
+
+    <sensor>
+        <force name="pegHead_force" site="pegHead"/>
+        </sensor>
+
+</mujoco>
+```
+
+### ppo_test/xml/xyz_base_dependencies.xml
+
+*大小: 1.4 KB | Token: 366*
+
+```xml
+<mujocoinclude>
+    <compiler angle="radian" inertiafromgeom="auto" inertiagrouprange="4 5"/>
+    <asset>
+
+      <material name="xyz_col" rgba="0.3 0.3 1.0 0.5" shininess="0" specular="0.5"/>
+
+      <mesh file="./xyz_base/base.stl" name="base"/>
+      <mesh file="./xyz_base/eGripperBase.stl" name="eGripperBase"/>
+      <mesh file="./xyz_base/head.stl" name="head"/>
+      <mesh file="./xyz_base/l0.stl" name="l0"/>
+      <mesh file="./xyz_base/l1.stl" name="l1"/>
+      <mesh file="./xyz_base/l2.stl" name="l2"/>
+      <mesh file="./xyz_base/l3.stl" name="l3"/>
+      <mesh file="./xyz_base/l4.stl" name="l4"/>
+      <mesh file="./xyz_base/l5.stl" name="l5"/>
+      <mesh file="./xyz_base/l6.stl" name="l6"/>
+      <mesh file="./xyz_base/pedestal.stl" name="pedestal"/>
+    </asset>
+
+    <default>
+
+      <default class="xyz_base">
+          <joint armature="0.001" damping="2" limited="true"/>
+          <geom conaffinity="0" contype="0" group="1" type="mesh"/>
+          <position ctrllimited="true" ctrlrange="0 1.57"/>
+          <default class="base_viz">
+              <geom conaffinity="0" condim="4" contype="0" group="1" margin="0.001" solimp=".8 .9 .01" solref=".02 1" type="mesh"/>
+          </default>
+          <default class="base_col">
+              <geom conaffinity="1" condim="4" contype="1" group="4" margin="0.001" material="xyz_col" solimp=".8 .9 .01" solref=".02 1"/>
+          </default>
+      </default>
+    </default>
+
+</mujocoinclude>
+```
+
+### ppo_test/xml/xyz_base.xml
+
+*大小: 18.9 KB | Token: 5.3K*
+
+```xml
 <mujocoinclude>
   <!--
   Usage:
@@ -213,11 +487,12 @@
           </body>
       </body>
 
-      <body mocap="true" name="mocap" pos="0 0 0" quat="1 0 0 0">
+      <body mocap="true" name="mocap" pos="0 0 0">
           <!--For debugging, set the alpha to 1-->
-          <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0.5 0.5 0.5 1" size="0.1 0.02 0.02" solimp="0.99 0.99 0.01" type="box"></geom>
+          <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0.5 0.5 0.5 1" size="0.1 0.02 0.02" type="box"></geom>
           <!-- <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0.0 0.5 0.5 0" size="0.01" type="sphere"></geom> -->
           <site name="mocap" pos="0 0 0" rgba="0.0 0.5 0.5 0" size="0.01" type="sphere"></site>
       </body>
 
 </mujocoinclude>
+```
