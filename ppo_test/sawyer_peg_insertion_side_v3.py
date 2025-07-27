@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import mujoco
 import numpy as np
 import numpy.typing as npt
 from gymnasium.spaces import Box
@@ -63,16 +64,29 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
 
         self.liftThresh = 0.11
 
-        self.pegHead_force_id = self.model.sensor("pegHead_force").id
-
     @property
     def model_name(self) -> str:
         return full_V3_path_for("sawyer_peg_insertion_side.xml")
 
     def _get_pegHead_force(self) -> npt.NDArray[np.float64]:
-        """获取pegHead所受的力 (Fx, Fy, Fz)."""
-        # MuJoCo force sensors output a 3D vector
-        return self.data.sensordata[self.pegHead_force_id : self.pegHead_force_id + 3]
+ 
+        peg_head_geom_id = self.data.geom("pegHead_geom").id
+        total_contact_force = np.zeros(3)
+        
+        for i in range(self.data.ncon):
+            contact = self.data.contact[i]
+            
+            # 3. 筛选逻辑大大简化：只需检查geom的ID是否匹配
+            if contact.geom1 == peg_head_geom_id or contact.geom2 == peg_head_geom_id:
+                force_vector = np.zeros(6, dtype=np.float64)
+                mujoco.mj_contactForce(self.model, self.data, i, force_vector)
+                
+                if contact.geom2 == peg_head_geom_id:
+                    total_contact_force += force_vector[:3]
+                else: # contact.geom1 == peg_head_geom_id
+                    total_contact_force -= force_vector[:3]
+
+        return total_contact_force
 
     @SawyerXYZEnv._Decorators.assert_task_is_set
     def evaluate_state(
@@ -109,17 +123,34 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         
         success = float(
             success_arrive
-            and target[0] - obj_head[0] >= 0.05
+            and target[0] - obj_head[0] >= 0.04
         )
             
         near_object = float(tcp_to_obj <= 0.03)
 
-        # Get pegHead force, magnitude, and direction
+        # 获取 pegHead 受力, 大小, 和方向
         pegHead_force = self._get_pegHead_force()
         force_magnitude = np.linalg.norm(pegHead_force)
-        # Avoid division by zero if force is (0,0,0)
+        # 避免零除错误
         force_direction = pegHead_force / (force_magnitude + 1e-8) if force_magnitude > 1e-8 else np.zeros_like(pegHead_force)
 
+        # --- 力可视化更新 ---
+        force_viz_geom_id = self.model.geom('force_viz').id
+        VIZ_SCALE = 0.01  # 可视化缩放因子
+        # MuJoCo中圆柱体的长度是 2 * size[1]
+        self.model.geom_size[force_viz_geom_id][1] = force_magnitude * VIZ_SCALE / 2.0
+        
+        if force_magnitude > 1e-3: # 设置一个小的阈值以避免不必要的计算
+            # 默认圆柱体是沿着Z轴的
+            z_axis = np.array([0, 0, 1])
+            # 计算将Z轴旋转到力的方向所需的旋转量
+            rot, _ = Rotation.align_vectors(force_direction.reshape(1,-1), z_axis.reshape(1,-1))
+            # 转换为 MuJoCo 的四元数格式 [w, x, y, z]
+            quat = rot.as_quat()[[3, 0, 1, 2]]
+            self.model.geom_quat[force_viz_geom_id] = quat
+        else:
+            # 如果力很小，就让圆柱体变得非常短（隐藏）
+            self.model.geom_size[force_viz_geom_id][1] = 0.0
 
         info = {
             "success": success,
@@ -129,9 +160,9 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             "in_place_reward": in_place_reward,
             "obj_to_target": obj_to_target,
             "unscaled_reward": reward,
-            "pegHead_force": pegHead_force,             # Raw force vector
-            "pegHead_force_magnitude": force_magnitude, # Force magnitude
-            "pegHead_force_direction": force_direction, # Force direction (unit vector)
+            "pegHead_force": pegHead_force,             # 原始力向量
+            "pegHead_force_magnitude": force_magnitude, # 力的大小
+            "pegHead_force_direction": force_direction, # 力的方向 (单位向量)
         }
 
         return reward, info
@@ -152,6 +183,7 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         self.peg_head_pos_init = self._get_site_pos("pegHead")
         self._set_obj_xyz(self.obj_init_pos)
         self.model.body("box").pos = pos_box
+        self.model.body("box").quat = Rotation.from_euler('xyz', [0, 0, 90+10], degrees=True).as_quat()[[3,0, 1, 2]]
         self._target_pos = pos_box + np.array([0.03, 0.0, 0.13])
         self.model.site("goal").pos = self._target_pos
 

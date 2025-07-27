@@ -485,7 +485,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             The flat observation array (18 elements + force data)
         """
 
-        pos_hand = self.get_endeff_pos()
+        pos_hand = self.tcp_center
         quat_hand = self.get_endeff_quat() # Get hand quaternion
 
         finger_right, finger_left = (

@@ -17,11 +17,11 @@
 
 ### ppo_test/xml/basic_scene.xml
 
-*大小: 3.1 KB | Token: 806*
+*大小: 3.1 KB | Token: 807*
 
 ```xml
 <mujocoinclude>
-    <option timestep='0.0025' iterations="50" tolerance="1e-10" solver="Newton" jacobian="dense" cone="elliptic"/>
+    <option timestep='0.0025' iterations="150" tolerance="1e-10" solver="Newton" jacobian="dense" cone="elliptic"/>
 
     <asset>
         <!-- night sky -->
@@ -181,7 +181,7 @@
 
 ### ppo_test/xml/sawyer_peg_insertion_side.xml
 
-*大小: 1.4 KB | Token: 366*
+*大小: 1.7 KB | Token: 428*
 
 ```xml
 <mujoco>
@@ -194,10 +194,12 @@
       <include file="./xyz_base.xml"/>
 
         <body name="peg" pos="0 0.6 0.03">
-          <inertial pos="0 0 0" mass="0.1" diaginertia="100000 100000 100000"/>
+          <inertial pos="0 0 0" mass="1" diaginertia="0.001 0.001 0.001"/>
           <geom name="peg" euler="0 1.57 0" size="0.015 0.015 0.12" type="box" mass=".1" rgba="0.3 1 0.3 1" conaffinity="1" contype="1" group="1"/>
+          <geom name="pegHead_geom" type="sphere" size="0.016" pos="-0.12 0 0" rgba="1 0 0 0.5" conaffinity="1" contype="1" group="1"/>
           <joint type="free" limited="false" damping="0.005"/>
           <site name="pegHead" pos="-0.1 0 0" size="0.005" rgba="0.8 0 0 1"/>
+          <geom name="force_viz" type="cylinder" size="0.01 0.01" pos="-0.1 0 0" rgba="0 0 1 1" contype="0" conaffinity="0" group="1"/>
           <site name="pegEnd" pos="0.1 0 0" size="0.005" rgba="0.8 0 0 1"/>
           <site name="pegGrasp" pos=".03 .0 .01" size="0.005" rgba="0.8 0 0 1"/>
         </body>
@@ -210,17 +212,17 @@
     </worldbody>
 
     <actuator>
-        <position ctrllimited="true" ctrlrange="-1 1" joint="r_close" kp="400"  user="1"/>
-        <position ctrllimited="true" ctrlrange="-1 1" joint="l_close" kp="400"  user="1"/>
+        <position ctrllimited="true" ctrlrange="-1 1" joint="r_close" kp="1000"  user="1"/>
+        <position ctrllimited="true" ctrlrange="-1 1" joint="l_close" kp="1000"  user="1"/>
     </actuator>
 
+    <visual>
+      <rgba force="1 1 0 1"/> 
+    </visual>
+    
     <equality>
-        <weld body1="mocap" body2="hand" solref="0.02 1"></weld>
+        <weld body1="mocap" body2="hand" solref="0.002 1"></weld>
     </equality>
-
-    <sensor>
-        <force name="pegHead_force" site="pegHead"/>
-        </sensor>
 
 </mujoco>
 ```
@@ -269,7 +271,7 @@
 
 ### ppo_test/xml/xyz_base.xml
 
-*大小: 18.9 KB | Token: 5.3K*
+*大小: 19.0 KB | Token: 5.3K*
 
 ```xml
 <mujocoinclude>
@@ -327,7 +329,7 @@
               <geom size="0.08 0.12" pos="0 0 0.12" type="cylinder" rgba="0.5 0.1 0.1 0" />
               <body name="right_l0" pos="0 0 0.08">
                   <inertial pos="0.024366 0.010969 0.14363" quat="0.894823 0.00899958 -0.170275 0.412573" mass="5.3213" diaginertia="0.0651588 0.0510944 0.0186218" />
-                  <joint name="right_j0" pos="0 0 0" axis="0 0 1" limited="true" range="-3.0503 3.0503" damping="10"/>
+                  <joint name="right_j0" pos="0 0 0" axis="0 0 1" limited="true" range="-3.0503 3.0503" damping="5"/>
                   <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="0.5 0.1 0.1 1" mesh="l0" />
                   <body name="head" pos="0 0 0.2965">
                       <inertial pos="0.0053207 -2.6549e-05 0.1021" quat="0.999993 7.08405e-05 -0.00359857 -0.000626247" mass="1.5795" diaginertia="0.0118334 0.00827089 0.00496574" />
@@ -358,18 +360,18 @@
                       <!-- <geom size="0.07" pos="0 0 0.1225" rgba="0.5 0.1 0.1 0" /> -->
                       <body name="right_l2" pos="0 -0.14 0.1425" quat="0.707107 0.707107 0 0">
                           <inertial pos="-0.00016044 -0.014967 0.13582" quat="0.707831 -0.0524761 0.0516007 0.702537" mass="1.745" diaginertia="0.0257928 0.025506 0.00292515" />
-                          <joint name="right_j2" pos="0 0 0" axis="0 0 1" limited="true" range="-3.0426 3.0426" damping="10"/>
+                          <joint name="right_j2" pos="0 0 0" axis="0 0 1" limited="true" range="-3.0426 3.0426" damping="5"/>
                           <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="0.5 0.1 0.1 1" mesh="l2" />
                           <geom size="0.06 0.17" pos="0 0 0.08" type="cylinder" rgba="0.5 0.1 0.1 0" />
                           <body name="right_l3" pos="0 -0.042 0.26" quat="0.707107 -0.707107 0 0">
                               <site name="armsite" pos="0 0 0" size="0.01" />
                               <inertial pos="-0.0048135 -0.0281 -0.084154" quat="0.902999 0.385391 -0.0880901 0.168247" mass="2.5097" diaginertia="0.0102404 0.0096997 0.00369622" />
-                              <joint name="right_j3" pos="0 0 0" axis="0 0 1" limited="true" range="-3.0439 3.0439" damping="10"/>
+                              <joint name="right_j3" pos="0 0 0" axis="0 0 1" limited="true" range="-3.0439 3.0439" damping="5"/>
                               <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="0.5 0.1 0.1 1" mesh="l3" />
                               <!-- <geom size="0.06" pos="0 -0.01 -0.12" rgba="0.5 0.1 0.1 0" /> -->
                               <body name="right_l4" pos="0 -0.125 -0.1265" quat="0.707107 0.707107 0 0">
                                   <inertial pos="-0.0018844 0.0069001 0.1341" quat="0.803612 0.031257 -0.0298334 0.593582" mass="1.1136" diaginertia="0.0136549 0.0135493 0.00127353" />
-                                  <joint name="right_j4" pos="0 0 0" axis="0 0 1" limited="true" range="-2.9761 2.9761" damping="10" />
+                                  <joint name="right_j4" pos="0 0 0" axis="0 0 1" limited="true" range="-2.9761 2.9761" damping="5" />
                                   <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="0.5 0.1 0.1 1" mesh="l4" />
                                   <geom size="0.045 0.15" pos="0 0 0.11" type="cylinder" rgba="0.5 0.1 0.1 0" />
                                   <body name="right_arm_itb" pos="-0.055 0 0.075" quat="0.707107 0 -0.707107 0">
@@ -377,7 +379,7 @@
                                   </body>
                                   <body name="right_l5" pos="0 0.031 0.275" quat="0.707107 -0.707107 0 0">
                                       <inertial pos="0.0061133 -0.023697 0.076416" quat="0.404076 0.9135 0.0473125 0.00158335" mass="1.5625" diaginertia="0.00474131 0.00422857 0.00190672" />
-                                      <joint name="right_j5" pos="0 0 0" axis="0 0 1" limited="true" range="-2.9761 2.9761" damping="10"/>
+                                      <joint name="right_j5" pos="0 0 0" axis="0 0 1" limited="true" range="-2.9761 2.9761" damping="5"/>
                                       <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="0.5 0.1 0.1 1" mesh="l5" />
                                       <!-- <geom size="0.06" pos="0 0 0.1" rgba="0.5 0.1 0.1 0" /> -->
                                       <body name="right_hand_camera" pos="0.039552 -0.033 0.0695" quat="0.707107 0 0.707107 0">
@@ -388,7 +390,7 @@
                                       </body>
                                       <body name="right_l6" pos="0 -0.11 0.1053" quat="0.0616248 0.06163 -0.704416 0.704416">
                                           <inertial pos="-8.0726e-06 0.0085838 -0.0049566" quat="0.479044 0.515636 -0.513069 0.491322" mass="0.3292" diaginertia="0.000360258 0.000311068 0.000214974" />
-                                          <joint name="right_j6" pos="0 0 0" axis="0 0 1" limited="true" range="-4.7124 4.7124" damping="10"/>
+                                          <joint name="right_j6" pos="0 0 0" axis="0 0 1" limited="true" range="-4.7124 4.7124" damping="5"/>
                                           <geom type="mesh" contype="4" conaffinity="2" group="1" rgba="0.5 0.1 0.1 1" mesh="l6" />
                                           <geom size="0.055 0.025" pos="0 0.015 -0.01" type="cylinder" rgba="0.5 0.1 0.1 0" />
                                           <body name="right_hand" pos="0 0 0.0245" quat="0.707107 0 0 0.707107">
@@ -487,10 +489,10 @@
           </body>
       </body>
 
-      <body mocap="true" name="mocap" pos="0 0 0">
+      <body mocap="true" name="mocap" pos="0 0 0" quat="1 0 0 0">
           <!--For debugging, set the alpha to 1-->
-          <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0.5 0.5 0.5 1" size="0.1 0.02 0.02" type="box"></geom>
-          <!-- <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0.0 0.5 0.5 0" size="0.01" type="sphere"></geom> -->
+          <!-- <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0.5 0.5 0.5 1" size="0.1 0.02 0.02" solimp="0.99 0.99 0.01" type="box"></geom> -->
+          <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0.0 0.5 0.5 0" size="0.01" type="sphere"></geom>
           <site name="mocap" pos="0 0 0" rgba="0.0 0.5 0.5 0" size="0.01" type="sphere"></site>
       </body>
 

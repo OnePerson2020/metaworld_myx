@@ -8,10 +8,12 @@
       <include file="./xyz_base.xml"/>
 
         <body name="peg" pos="0 0.6 0.03">
-          <inertial pos="0 0 0" mass="0.1" diaginertia="100000 100000 100000"/>
+          <inertial pos="0 0 0" mass="1" diaginertia="0.001 0.001 0.001"/>
           <geom name="peg" euler="0 1.57 0" size="0.015 0.015 0.12" type="box" mass=".1" rgba="0.3 1 0.3 1" conaffinity="1" contype="1" group="1"/>
+          <geom name="pegHead_geom" type="box" size="0.005 0.015 0.015" pos="-0.12 0 0" mass=".001" rgba="1 0 0 0.5" conaffinity="1" contype="1" group="1"/>
           <joint type="free" limited="false" damping="0.005"/>
           <site name="pegHead" pos="-0.1 0 0" size="0.005" rgba="0.8 0 0 1"/>
+          <geom name="force_viz" type="cylinder" size="0.01 0.01" pos="-0.1 0 0" rgba="0 0 1 1" contype="0" conaffinity="0" group="1"/>
           <site name="pegEnd" pos="0.1 0 0" size="0.005" rgba="0.8 0 0 1"/>
           <site name="pegGrasp" pos=".03 .0 .01" size="0.005" rgba="0.8 0 0 1"/>
         </body>
@@ -24,16 +26,16 @@
     </worldbody>
 
     <actuator>
-        <position ctrllimited="true" ctrlrange="-1 1" joint="r_close" kp="400"  user="1"/>
-        <position ctrllimited="true" ctrlrange="-1 1" joint="l_close" kp="400"  user="1"/>
+        <position ctrllimited="true" ctrlrange="-1 1" joint="r_close" kp="1000"  user="1"/>
+        <position ctrllimited="true" ctrlrange="-1 1" joint="l_close" kp="1000"  user="1"/>
     </actuator>
 
+    <visual>
+      <rgba force="1 1 0 1"/> 
+    </visual>
+    
     <equality>
-        <weld body1="mocap" body2="hand" solref="0.002 1"></weld>
+        <weld body1="mocap" body2="hand" solref="0.0001 1"></weld>
     </equality>
-
-    <sensor>
-        <force name="pegHead_force" site="pegHead"/>
-        </sensor>
 
 </mujoco>
