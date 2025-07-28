@@ -12,9 +12,9 @@ from scipy.spatial.transform import Rotation
 
 from ppo_test.asset_path_utils import full_V3_path_for
 from ppo_test.sawyer_xyz_env import RenderMode, SawyerXYZEnv
-from ppo_test.types import InitConfigDict
 from ppo_test.utils import reward_utils
 
+quat_box = Rotation.from_euler('xyz', [0, 0, 90+15], degrees=True).as_quat()[[3,0, 1, 2]]
 
 class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
     TARGET_RADIUS: float = 0.07
@@ -69,24 +69,38 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         return full_V3_path_for("sawyer_peg_insertion_side.xml")
 
     def _get_pegHead_force(self) -> npt.NDArray[np.float64]:
- 
+        """
+        计算并返回 pegHead_geom 在【世界坐标系】下受到的总接触力。
+        """
         peg_head_geom_id = self.data.geom("pegHead_geom").id
-        total_contact_force = np.zeros(3)
+        total_world_force = np.zeros(3) # 初始化世界坐标系下的总受力
         
         for i in range(self.data.ncon):
             contact = self.data.contact[i]
             
-            # 3. 筛选逻辑大大简化：只需检查geom的ID是否匹配
+            # 检查当前接触是否涉及 pegHead_geom
             if contact.geom1 == peg_head_geom_id or contact.geom2 == peg_head_geom_id:
-                force_vector = np.zeros(6, dtype=np.float64)
-                mujoco.mj_contactForce(self.model, self.data, i, force_vector)
                 
-                if contact.geom2 == peg_head_geom_id:
-                    total_contact_force += force_vector[:3]
-                else: # contact.geom1 == peg_head_geom_id
-                    total_contact_force -= force_vector[:3]
-
-        return total_contact_force
+                # 步骤 1: 获取在“接触坐标系”下的力
+                force_contact_frame = np.zeros(6, dtype=np.float64)
+                mujoco.mj_contactForce(self.model, self.data, i, force_contact_frame)
+                
+                # 步骤 2: 获取从“接触坐标系”到“世界坐标系”的旋转矩阵
+                contact_frame_rot = contact.frame.reshape(3, 3)
+                
+                # 步骤 3: 将接触力从“接触坐标系”旋转到“世界坐标系”
+                # @ 是Python中的矩阵乘法运算符
+                force_world_frame = contact_frame_rot @ force_contact_frame[:3]
+                
+                # 步骤 4: 根据牛顿第三定律（作用力与反作用力）确定力的方向
+                # 如果geom2是我们的传感器，力是施加于它的，方向正确
+                # 如果geom1是我们的传感器，力是由它施加的，需要取反
+                if contact.geom1 == peg_head_geom_id:
+                    total_world_force -= force_world_frame
+                else: # contact.geom2 == peg_head_geom_id
+                    total_world_force += force_world_frame
+        
+        return total_world_force
 
     @SawyerXYZEnv._Decorators.assert_task_is_set
     def evaluate_state(
@@ -121,9 +135,11 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             obj_to_target <= 0.07
         )
         
+        # if success_arrive: print(target[0] - obj_head[0])
+        
         success = float(
             success_arrive
-            and target[0] - obj_head[0] >= 0.04
+            and target[0] - obj_head[0] >= 0.01
         )
             
         near_object = float(tcp_to_obj <= 0.03)
@@ -132,25 +148,8 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         pegHead_force = self._get_pegHead_force()
         force_magnitude = np.linalg.norm(pegHead_force)
         # 避免零除错误
+        # pegHead_force[0] = 0
         force_direction = pegHead_force / (force_magnitude + 1e-8) if force_magnitude > 1e-8 else np.zeros_like(pegHead_force)
-
-        # --- 力可视化更新 ---
-        force_viz_geom_id = self.model.geom('force_viz').id
-        VIZ_SCALE = 0.01  # 可视化缩放因子
-        # MuJoCo中圆柱体的长度是 2 * size[1]
-        self.model.geom_size[force_viz_geom_id][1] = force_magnitude * VIZ_SCALE / 2.0
-        
-        if force_magnitude > 1e-3: # 设置一个小的阈值以避免不必要的计算
-            # 默认圆柱体是沿着Z轴的
-            z_axis = np.array([0, 0, 1])
-            # 计算将Z轴旋转到力的方向所需的旋转量
-            rot, _ = Rotation.align_vectors(force_direction.reshape(1,-1), z_axis.reshape(1,-1))
-            # 转换为 MuJoCo 的四元数格式 [w, x, y, z]
-            quat = rot.as_quat()[[3, 0, 1, 2]]
-            self.model.geom_quat[force_viz_geom_id] = quat
-        else:
-            # 如果力很小，就让圆柱体变得非常短（隐藏）
-            self.model.geom_size[force_viz_geom_id][1] = 0.0
 
         info = {
             "success": success,
@@ -183,12 +182,11 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         self.peg_head_pos_init = self._get_site_pos("pegHead")
         self._set_obj_xyz(self.obj_init_pos)
         self.model.body("box").pos = pos_box
-        self.model.body("box").quat = Rotation.from_euler('xyz', [0, 0, 90+10], degrees=True).as_quat()[[3,0, 1, 2]]
+        self.model.body("box").quat = quat_box
         self._target_pos = pos_box + np.array([0.03, 0.0, 0.13])
         self.model.site("goal").pos = self._target_pos
 
         self.objHeight = self.get_body_com("peg").copy()[2]
-        self.heightTarget = self.objHeight + self.liftThresh
                 
         return self._get_obs()
 

@@ -1,3 +1,4 @@
+import re
 import ppo_test
 import time
 import numpy as np
@@ -13,20 +14,22 @@ from ppo_test.policies.policy import Policy, assert_fully_parsed, move
 
 class CorrectedPolicyV2(Policy):
 
-    def __init__(self, position_gain=0.025, rotation_gain=0.04, force_feedback_gain=10, force_threshold=15):
+    def __init__(self, force_feedback_gain=1, force_threshold=15):
 
         super().__init__()
-        self.position_gain = position_gain
-        self.rotation_gain = rotation_gain
         self.force_feedback_gain = force_feedback_gain
         self.force_threshold = force_threshold
         self.current_stage = 1
         self.gasp = False
+        self.prev_r_error_rotvec = np.zeros(3)
+        self.ini_r = Rotation.from_quat([0,1,0,1])
 
     def reset(self):
         print("Resetting policy stage to 1.")
         self.current_stage = 1
         self.gasp = False
+        self.prev_r_error_rotvec = np.zeros(3)
+        self.ini_r = Rotation.from_quat([0,1,0,1])
 
     @staticmethod
     @assert_fully_parsed
@@ -44,34 +47,25 @@ class CorrectedPolicyV2(Policy):
         }
     
     def get_action(self, obs: npt.NDArray[np.float64]) -> npt.NDArray[np.float32]:
-        o_d = self._parse_obs(obs)
-        action = Action(7)
-
-        desired_pos, desired_r = self._desired_pose(o_d)
         
-        force_vector = o_d["pegHead_force"]
-        force_magnitude = np.linalg.norm(force_vector)
-    
-        # # 仅在插入阶段（例如阶段4）且力超过阈值时应用调整
-        # if self.current_stage == 4 and force_magnitude > self.force_threshold:
-        #     # peg_head - peg
-        #     lever_arm = np.array([-0.15, 0, 0])
-        #     torque_vector = np.cross(lever_arm, force_vector) * self.force_feedback_gain
-        #     # 应用旋转修正
-        #     r_correction = Rotation.from_rotvec(torque_vector)
-        #     desired_r = r_correction * desired_r
-            
-        #     print(f"Rot Correction Axis: {r_correction.as_euler('xyz', degrees=True)}")
-
-        # desired_pos = np.array([0.2,0.6,0.3])
-        delta_pos = move(o_d["hand_pos"], to_xyz=desired_pos, p=self.position_gain)
-        delta_rot = self._calculate_rotation_action(o_d["hand_quat"], desired_r)
-
+        o_d = self._parse_obs(obs)
+        
+        desired_pos, desired_r = self._desired_pose(o_d)
+        # desired_pos = o_d["hand_pos"]
+        delta_pos = move(o_d["hand_pos"], to_xyz=desired_pos)
+        
+        delta_rot_quat = self._calculate_rotation_action(o_d["hand_quat"], desired_r)
+        # delta_rot = np.zeros(3)
         gripper_effort = self._grab_effort(o_d)
 
-        full_action = np.hstack((delta_pos, delta_rot, gripper_effort))
-        # full_action = np.zeros(7)
+        force_vector = o_d["pegHead_force"]
+        force_magnitude = np.linalg.norm(force_vector)
+        if force_magnitude > 10:
+            delta_pos = np.zeros(3)
         
+        full_action = np.hstack((delta_pos, delta_rot_quat, gripper_effort))
+        
+        action = Action(8)
         action.set_action(full_action)
         return action.array.astype(np.float32)
 
@@ -80,64 +74,115 @@ class CorrectedPolicyV2(Policy):
         pos_curr = o_d["hand_pos"]
         pos_peg = o_d["peg_pos"]
         pos_hole = o_d["goal_pos"]
-        ini_r = Rotation.from_euler('xyz', [0,90,0], degrees=True)
-        # desired_r = ini_r * Rotation.from_euler('xyz', [5,0,0], degrees=True)
-        
+        gripper_distance = o_d["gripper_distance_apart"]
+
+        force_vector = o_d["pegHead_force"]
+        force_magnitude = np.linalg.norm(force_vector)
+
+        # 仅在阶段4 (插入阶段) 且力大于阈值时激活
+        if self.current_stage == 4 and force_magnitude > 10:
+            
+            # 1. 获取peg当前的姿态（从mujoco四元数转换为scipy Rotation对象）
+            peg_current_rotation = Rotation.from_quat(o_d["peg_rot"])
+            
+            # 2. 定义在peg局部坐标系下的力臂向量
+            lever_arm_local = np.array([-1, 0.0, -0.1])
+            
+            # 3. 将力臂向量从局部坐标系转换到世界坐标系
+            lever_arm_world = peg_current_rotation.apply(lever_arm_local)
+            
+            corrective_torque_vector = np.cross(lever_arm_world, force_vector)* 1
+            
+            # 5. 限制修正速度，保证稳定性
+            speed = np.deg2rad(2) # 最大修正角速度
+            torque_magnitude = np.linalg.norm(corrective_torque_vector)
+            
+            if torque_magnitude > 1e-6: # 避免除以零
+                unit_torque_axis = corrective_torque_vector / torque_magnitude
+                
+                # 如果计算出的旋转速度超过上限，则使用上限速度
+                if torque_magnitude > speed:
+                    increment_rotvec = unit_torque_axis * speed
+                else:
+                    increment_rotvec = corrective_torque_vector
+                    
+                # 6. 生成修正旋转并更新累积的目标姿态
+                #    这是关键修正点之二：对 self.ini_r 进行累积更新
+                r_correction = Rotation.from_rotvec(increment_rotvec)
+                self.ini_r = r_correction * self.ini_r
+                
+                # desir_pos = pos_curr
+                
+                print(f"Force Detected: {force_magnitude:.2f} N. Applying rotational correction.")
+                print(f"Corrected Target Euler: {r_correction.as_euler('xyz', degrees=True)}")
+                   
         # 阶段1: 移动到peg正上方
         if self.current_stage == 1:
             # print("Stage 1: Moving to peg top")
             if np.linalg.norm(pos_curr[:2] - pos_peg[:2]) < 0.04:
                 self.current_stage = 2
-            return pos_peg + np.array([0.0, 0.0, 0.3]), ini_r
+            return pos_peg + np.array([0.0, 0.0, 0.3]), self.ini_r
+            # return pos_curr, self.ini_r
 
         # 阶段2: 下降抓取peg
         if self.current_stage == 2:
             # print(f"Stage 2: Descending to peg.")
-            if pos_curr[2] - pos_peg[2] < -0.005:
+            if pos_curr[2] - pos_peg[2] < -0.001 and gripper_distance < 0.35:
                 # print(">>> Peg lifted! Transitioning to Stage 3.")
                 self.current_stage = 3
-            return pos_peg - np.array([0.0, 0.0, 0.02]), ini_r
-
+            return pos_peg - np.array([0.0, 0.0, 0.02]), self.ini_r
+            
         # 阶段3: 移动到洞口预备位置并旋转
         if self.current_stage == 3:
             # print("Stage 3: Moving to hole side")
             if np.linalg.norm(pos_curr[1:] - pos_hole[1:]) < 0.03:
                 self.current_stage = 4
-            return pos_hole + np.array([0.4, 0.0, 0.0]), ini_r
+            return pos_hole + np.array([0.4, 0.0, 0.0]), self.ini_r
         
         # 阶段4: 执行插入
         if self.current_stage == 4:
             # print("Stage 4: Inserting peg")
-            return pos_hole + np.array([0.0, 0.0, 0.01]), ini_r
+            desir_pos = pos_hole + np.array([0.1, 0.0, 0.0])
+            return desir_pos, self.ini_r
             
         return None
 
     def _calculate_rotation_action(self, current_quat_mujoco, target_Rotation):
-        """
-        根据当前和目标姿态，计算出平滑的旋转增量（欧拉角格式）。
-        """
-        # 步骤 0: 将输入从MuJoCo格式([w,x,y,z])转换为SciPy的Rotation对象
-        r_curr = Rotation.from_quat(current_quat_mujoco[[1, 2, 3, 0]])
+            """
+            根据当前和目标姿态，计算出平滑的旋转增量（欧拉角格式）。
+            如果角度差大于1度，则以恒定的1度角速度旋转；否则，旋转剩余的角度。
+            """
+            kp = 0.3
+            kd = 0.3
+            speed = np.deg2rad(0.5)
+            
+            r_curr = Rotation.from_quat(current_quat_mujoco[[1, 2, 3, 0]])
+            r_error = target_Rotation * r_curr.inv()
         
-        
-        # 步骤 1: 计算旋转误差 (从当前到目标的差异)
-        r_error = target_Rotation * r_curr.inv()
-        print(f"Current Rotation: {r_error.as_euler('xyz', degrees=True)}")
-    
-        # 步骤 2: 将差异旋转转换为“旋转向量”(Axis-Angle)
-        error_rotvec = r_error.as_rotvec()
+            # 步骤 2: 将差异旋转转换为“旋转向量”(Axis-Angle)
+            error_rotvec = r_error.as_rotvec()
+            rotation_axis = error_rotvec / np.linalg.norm(error_rotvec) + 1e-16
+            # print(f"Current Rotation Error: {np.rad2deg(angle_in_radians):.2f} degrees")
+            unconstrained_increment_rotvec = kp * error_rotvec + kd * (error_rotvec - self.prev_r_error_rotvec)
+            self.prev_r_error_rotvec = error_rotvec
+            
+            speed_of_increment = np.linalg.norm(unconstrained_increment_rotvec)
+            
+            if speed_of_increment > speed:
+                increment_rotvec = rotation_axis * speed
+            else:
+                increment_rotvec = unconstrained_increment_rotvec
 
-        # 步骤 3: 应用增益，计算本次步进的增量
-        increment_rotvec = error_rotvec * self.rotation_gain
-        
-        # 步骤 4: 将这个小的增量向量转换回Rotation对象
-        r_increment = Rotation.from_rotvec(increment_rotvec)
-        
-        # 步骤 5: 将增量转换为环境期望的“欧拉角”格式
-        delta_rot_euler = r_increment.as_euler('xyz', degrees=True)
+            angle_of_increment = np.linalg.norm(increment_rotvec)
+            if angle_of_increment < 1e-6:
+                return np.array([0., 0., 0., 1.])
+            
+            r_increment = Rotation.from_rotvec(increment_rotvec)
+            delta_rot_quat = r_increment.as_quat()
 
-        return delta_rot_euler
-    
+            return delta_rot_quat
+
+
     def _grab_effort(self, o_d: dict[str, npt.NDArray[np.float64]]) -> float:
         pos_curr = o_d["hand_pos"]
         pos_peg = o_d["peg_pos"]
@@ -174,7 +219,7 @@ if __name__ == "__main__":
         episode_forces = []
         done = False
         count = 0
-        while count < 500 and not done:
+        while count < 5000 and not done:
             env.render()
             action = policy.get_action(obs)
             obs, reward, terminated, truncated, info = env.step(action)

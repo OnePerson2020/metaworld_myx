@@ -1,11 +1,12 @@
 <mujocoinclude>
     <compiler angle="radian" inertiafromgeom="auto" inertiagrouprange="4 5"/>
     <asset>
-        <texture name="T_peg_block_wood" type="cube" file="./textures/wood1.png"/>
+      <texture name="T_peg_block_wood" type="cube" file="./textures/wood1.png"/>
 
       <material name="peg_block_col" rgba="0.3 0.3 1.0 0.5" shininess="0" specular="0"/>
       <material name="peg_block_wood" texture="T_peg_block_wood" shininess="1" reflectance=".7" specular=".5"/>
       <material name="peg_block_red" rgba=".55 0 0 1" shininess="1" reflectance=".7" specular=".5"/>
+      <material name="peg_block_green" rgba="0 0.8 0 1" shininess="0.5" specular="0.5"/>
 
     </asset>
     <default>

@@ -12,7 +12,7 @@ import mujoco
 import numpy as np
 import numpy.typing as npt
 from gymnasium.envs.mujoco.mujoco_env import MujocoEnv as mjenv_gym
-from gymnasium.spaces import Box, Discrete, Space
+from gymnasium.spaces import Box, Space
 from gymnasium.utils import seeding
 from gymnasium.utils.ezpickle import EzPickle
 from typing_extensions import TypeAlias
@@ -73,7 +73,6 @@ class SawyerMocapBase(mjenv_gym):
     def get_endeff_quat(self) -> npt.NDArray[Any]:
         """Returns the quaternion of the end effector."""
         return self.data.body("hand").xquat
-        # return self.data.mocap_quat[0][:]
     
 
     @property
@@ -245,8 +244,8 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         self.init_right_pad: npt.NDArray[Any] = self.get_body_com("rightpad")
 
         self.action_space = Box(  # type: ignore
-            np.array([-1, -1, -1, -1, -1, -1, -1]),
-            np.array([+1, +1, +1, +1, +1, +1, +1]),
+            np.array([-1, -1, -1, -1, -1, -1, -1, -1]),
+            np.array([+1, +1, +1, +1, +1, +1, +1, +1]),
             dtype=np.float32,
         )
 
@@ -346,9 +345,10 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         )
         self.data.mocap_pos = new_mocap_pos
         
+        r_increment = Rotation.from_quat(action[3:7])
         
         current_mocap = self.data.mocap_quat[0]
-        new_mocap_r = Rotation.from_quat(current_mocap[[1,2,3,0]]) * Rotation.from_euler('xyz', action[3:6], degrees=True)
+        new_mocap_r = r_increment * Rotation.from_quat(current_mocap[[1,2,3,0]])
         new_mocap_quat = new_mocap_r.as_quat()[[3,0,1,2]]
         self.data.mocap_quat[0] = new_mocap_quat
 
@@ -444,7 +444,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         return 0 < leftpad_object_contact_force and 0 < rightpad_object_contact_force
 
     def _get_id_main_object(self) -> int:
-        return self.data.geom("objGeom").id
+        return self.data.geom("peg").id
 
     def _get_pos_objects(self) -> npt.NDArray[Any]:
         """Retrieves object position(s) from mujoco properties or instance vars.
@@ -608,13 +608,12 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         """Step the environment.
 
         Args:
-            action: The action to take. Must be a 7 element array of floats.
-
+            action:
         Returns:
             The (next_obs, reward, terminated, truncated, info) tuple.
         """
-        assert len(action) == 7, f"Actions should be size 7, got {len(action)}" # Changed to 7
-        self.set_xyz_action(action[:6]) # Pass position and rotation actions
+        assert len(action) == 8, f"Actions should be size 8, got {len(action)}"
+        self.set_xyz_action(action[:7]) # Pass position and rotation actions
         if self.curr_path_length >= self.max_path_length:
             raise ValueError("You must reset the env manually once truncate==True")
         self.do_simulation([action[-1], -action[-1]], n_frames=self.frame_skip)
