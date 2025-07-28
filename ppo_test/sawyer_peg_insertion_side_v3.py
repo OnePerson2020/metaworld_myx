@@ -144,13 +144,6 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             
         near_object = float(tcp_to_obj <= 0.03)
 
-        # 获取 pegHead 受力, 大小, 和方向
-        pegHead_force = self._get_pegHead_force()
-        force_magnitude = np.linalg.norm(pegHead_force)
-        # 避免零除错误
-        # pegHead_force[0] = 0
-        force_direction = pegHead_force / (force_magnitude + 1e-8) if force_magnitude > 1e-8 else np.zeros_like(pegHead_force)
-
         info = {
             "success": success,
             "near_object": near_object,
@@ -159,9 +152,7 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             "in_place_reward": in_place_reward,
             "obj_to_target": obj_to_target,
             "unscaled_reward": reward,
-            "pegHead_force": pegHead_force,             # 原始力向量
-            "pegHead_force_magnitude": force_magnitude, # 力的大小
-            "pegHead_force_direction": force_direction, # 力的方向 (单位向量)
+            "pegHead_force": self._get_pegHead_force()
         }
 
         return reward, info

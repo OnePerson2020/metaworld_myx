@@ -10,7 +10,7 @@ from typing import Any, Tuple
 from scipy.spatial.transform import Rotation, Slerp
 
 from ppo_test.policies.action import Action
-from ppo_test.policies.policy import Policy, assert_fully_parsed, move
+from ppo_test.policies.policy import Policy, assert_fully_parsed
 
 class CorrectedPolicyV2(Policy):
 
@@ -22,6 +22,7 @@ class CorrectedPolicyV2(Policy):
         self.current_stage = 1
         self.gasp = False
         self.prev_r_error_rotvec = np.zeros(3)
+        self.prev_pos_error = np.zeros(3)
         self.ini_r = Rotation.from_quat([0,1,0,1])
 
     def reset(self):
@@ -29,6 +30,7 @@ class CorrectedPolicyV2(Policy):
         self.current_stage = 1
         self.gasp = False
         self.prev_r_error_rotvec = np.zeros(3)
+        self.prev_pos_error = np.zeros(3)
         self.ini_r = Rotation.from_quat([0,1,0,1])
 
     @staticmethod
@@ -52,7 +54,7 @@ class CorrectedPolicyV2(Policy):
         
         desired_pos, desired_r = self._desired_pose(o_d)
         # desired_pos = o_d["hand_pos"]
-        delta_pos = move(o_d["hand_pos"], to_xyz=desired_pos)
+        delta_pos = self._calculate_pos_action(o_d["hand_pos"], to_xyz=desired_pos)
         
         delta_rot_quat = self._calculate_rotation_action(o_d["hand_quat"], desired_r)
         # delta_rot = np.zeros(3)
@@ -137,6 +139,43 @@ class CorrectedPolicyV2(Policy):
             return desir_pos, self.ini_r
         return None
 
+    def _calculate_pos_action(self,
+        from_xyz: npt.NDArray[any], 
+        to_xyz: npt.NDArray[any], 
+        speed: float = 0.2
+    ) -> npt.NDArray[any]:
+        """
+        根据一个恒定的速度预算，计算从一点到另一点的移动向量。
+
+        Args:
+            from_xyz: 起始坐标。
+            to_xyz: 目标坐标。
+            max_dist_per_step: 在这一个时间步内允许移动的最大距离。
+
+        Returns:
+            一个代表本次位移的XYZ向量。
+        """
+        error_vec = to_xyz - from_xyz
+        Kp = 0.5
+        Kd = 0.3
+        
+        distance = np.linalg.norm(error_vec)
+        max_dist_per_step = speed * 0.0125
+        # 如果距离非常小，则不移动
+        if distance < 1e-6:
+            return np.zeros(3)
+
+        # 如果剩余距离小于单步最大距离，则直接移动到终点以避免过冲
+        if distance < max_dist_per_step:
+            return Kp * error_vec + Kd * self.prev_pos_error
+
+        # 否则，沿着指向目标的方向，移动一个步长的距离
+        direction = error_vec / distance
+        delta_pos = direction * max_dist_per_step
+        
+        self.prev_pos_error = error_vec
+        return delta_pos
+
     def _calculate_rotation_action(self, current_quat_mujoco, target_Rotation):
             """
             根据当前和目标姿态，计算出平滑的旋转增量（欧拉角格式）。
@@ -144,7 +183,7 @@ class CorrectedPolicyV2(Policy):
             """
             kp = 0.3
             kd = 0.3
-            speed = np.deg2rad(0.5)
+            speed = np.deg2rad(5)
             
             r_curr = Rotation.from_quat(current_quat_mujoco[[1, 2, 3, 0]])
             r_error = target_Rotation * r_curr.inv()
@@ -172,7 +211,6 @@ class CorrectedPolicyV2(Policy):
 
             return delta_rot_quat
 
-
     def _grab_effort(self, o_d: dict[str, npt.NDArray[np.float64]]) -> float:
         pos_curr = o_d["hand_pos"]
         pos_peg = o_d["peg_pos"]
@@ -196,7 +234,7 @@ if __name__ == "__main__":
     policy = CorrectedPolicyV2()
 
     all_force_data = []
-    num_episodes = 5
+    num_episodes = 3
     for i in range(num_episodes):
         print(f"\n--- Episode {i+1}/{num_episodes} ---")
         # task = benchmark.train_tasks[0] 
@@ -215,14 +253,14 @@ if __name__ == "__main__":
             obs, reward, terminated, truncated, info = env.step(action)
             
             # 从info字典中记录力的信息
-            force_magnitude = info.get('pegHead_force_magnitude', 0.0)
-            force_direction = info.get('pegHead_force_direction', np.zeros(3))
+            force = info.get('pegHead_force', np.zeros(3))
+            force_magnitude = np.linalg.norm(force)
             episode_forces.append({
                 'step': count,
                 'magnitude': force_magnitude,
-                'direction_x': force_direction[0],
-                'direction_y': force_direction[1],
-                'direction_z': force_direction[2],
+                'direction_x': force[0],
+                'direction_y': force[1],
+                'direction_z': force[2],
             })
 
             done = terminated or truncated
