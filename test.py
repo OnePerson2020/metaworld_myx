@@ -58,10 +58,10 @@ class CorrectedPolicyV2(Policy):
         # delta_rot = np.zeros(3)
         gripper_effort = self._grab_effort(o_d)
 
-        force_vector = o_d["pegHead_force"]
-        force_magnitude = np.linalg.norm(force_vector)
-        if force_magnitude > 10:
-            delta_pos = np.zeros(3)
+        # force_vector = o_d["pegHead_force"]
+        # force_magnitude = np.linalg.norm(force_vector)
+        # if force_magnitude > 10:
+        #     delta_pos = np.zeros(3)
         
         full_action = np.hstack((delta_pos, delta_rot_quat, gripper_effort))
         
@@ -78,43 +78,6 @@ class CorrectedPolicyV2(Policy):
 
         force_vector = o_d["pegHead_force"]
         force_magnitude = np.linalg.norm(force_vector)
-
-        # 仅在阶段4 (插入阶段) 且力大于阈值时激活
-        if self.current_stage == 4 and force_magnitude > 10:
-            
-            # 1. 获取peg当前的姿态（从mujoco四元数转换为scipy Rotation对象）
-            peg_current_rotation = Rotation.from_quat(o_d["peg_rot"])
-            
-            # 2. 定义在peg局部坐标系下的力臂向量
-            lever_arm_local = np.array([-1, 0.0, -0.1])
-            
-            # 3. 将力臂向量从局部坐标系转换到世界坐标系
-            lever_arm_world = peg_current_rotation.apply(lever_arm_local)
-            
-            corrective_torque_vector = np.cross(lever_arm_world, force_vector)* 1
-            
-            # 5. 限制修正速度，保证稳定性
-            speed = np.deg2rad(2) # 最大修正角速度
-            torque_magnitude = np.linalg.norm(corrective_torque_vector)
-            
-            if torque_magnitude > 1e-6: # 避免除以零
-                unit_torque_axis = corrective_torque_vector / torque_magnitude
-                
-                # 如果计算出的旋转速度超过上限，则使用上限速度
-                if torque_magnitude > speed:
-                    increment_rotvec = unit_torque_axis * speed
-                else:
-                    increment_rotvec = corrective_torque_vector
-                    
-                # 6. 生成修正旋转并更新累积的目标姿态
-                #    这是关键修正点之二：对 self.ini_r 进行累积更新
-                r_correction = Rotation.from_rotvec(increment_rotvec)
-                self.ini_r = r_correction * self.ini_r
-                
-                # desir_pos = pos_curr
-                
-                print(f"Force Detected: {force_magnitude:.2f} N. Applying rotational correction.")
-                print(f"Corrected Target Euler: {r_correction.as_euler('xyz', degrees=True)}")
                    
         # 阶段1: 移动到peg正上方
         if self.current_stage == 1:
@@ -140,11 +103,38 @@ class CorrectedPolicyV2(Policy):
             return pos_hole + np.array([0.4, 0.0, 0.0]), self.ini_r
         
         # 阶段4: 执行插入
-        if self.current_stage == 4:
+        if self.current_stage == 4 :
             # print("Stage 4: Inserting peg")
             desir_pos = pos_hole + np.array([0.1, 0.0, 0.0])
-            return desir_pos, self.ini_r
             
+            if force_magnitude > 10:
+                # 1. 获取peg当前的姿态（从mujoco四元数转换为scipy Rotation对象）
+                peg_current_rotation = Rotation.from_quat(o_d["peg_rot"])
+                # 2. 定义在peg局部坐标系下的力臂向量
+                lever_arm_local = np.array([-1, 0.0, 0.0])
+                # 3. 将力臂向量从局部坐标系转换到世界坐标系
+                lever_arm_world = peg_current_rotation.apply(lever_arm_local)
+                corrective_torque_vector = np.cross(lever_arm_world, force_vector)
+                # 5. 限制修正速度，保证稳定性
+                speed = np.deg2rad(1) # 最大修正角速度
+                torque_magnitude = np.linalg.norm(corrective_torque_vector)
+                if torque_magnitude > 1e-6: # 避免除以零
+                    unit_torque_axis = corrective_torque_vector / torque_magnitude
+                    # 如果计算出的旋转速度超过上限，则使用上限速度
+                    if torque_magnitude > speed:
+                        increment_rotvec = unit_torque_axis * speed
+                    else:
+                        increment_rotvec = corrective_torque_vector
+                    # 6. 生成修正旋转并更新累积的目标姿态
+                    #    这是关键修正点之二：对 self.ini_r 进行累积更新
+                    r_correction = Rotation.from_rotvec(increment_rotvec)
+                    self.ini_r = r_correction * self.ini_r
+                    desir_pos = pos_curr
+                    
+                    print(f"Force Detected: {force_magnitude:.2f} N. Applying rotational correction.")
+                    print(f"Corrected Target Euler: {r_correction.as_euler('xyz', degrees=True)}")
+                    
+            return desir_pos, self.ini_r
         return None
 
     def _calculate_rotation_action(self, current_quat_mujoco, target_Rotation):
