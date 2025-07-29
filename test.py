@@ -1,4 +1,6 @@
 import re
+
+from matplotlib.pyplot import plot
 import ppo_test
 import time
 import numpy as np
@@ -12,6 +14,10 @@ from scipy.spatial.transform import Rotation, Slerp
 from ppo_test.policies.action import Action
 from ppo_test.policies.policy import Policy, assert_fully_parsed
 
+plot_forces = []
+plot_torque = []
+
+
 class CorrectedPolicyV2(Policy):
 
     def __init__(self, force_feedback_gain=1, force_threshold=15):
@@ -23,6 +29,8 @@ class CorrectedPolicyV2(Policy):
         self.gasp = False
         self.prev_r_error_rotvec = np.zeros(3)
         self.prev_pos_error = np.zeros(3)
+        self.e_im = np.zeros(6)
+        self.e_dot_im = np.zeros(6)
         self.ini_r = Rotation.from_quat([0,1,0,1])
 
     def reset(self):
@@ -31,6 +39,8 @@ class CorrectedPolicyV2(Policy):
         self.gasp = False
         self.prev_r_error_rotvec = np.zeros(3)
         self.prev_pos_error = np.zeros(3)
+        self.e_im = np.zeros(6)
+        self.e_dot_im = np.zeros(6)
         self.ini_r = Rotation.from_quat([0,1,0,1])
 
     @staticmethod
@@ -41,11 +51,12 @@ class CorrectedPolicyV2(Policy):
             "hand_quat": obs[3:7],
             "gripper_distance_apart": obs[7],
             "pegHead_force": obs[8:11],
-            "peg_pos": obs[11:14],
-            "peg_rot": obs[14:18],
-            "unused_info_curr_obs": obs[18:25],
-            "_prev_obs": obs[25:50],
-            "goal_pos": obs[-3:],
+            "pegHead_torque": obs[11:14],       
+            "peg_pos": obs[14:17],            
+            "peg_rot": obs[17:21],            
+            "unused_info_curr_obs": obs[21:28],
+            "_prev_obs": obs[28:56],          
+            "goal_pos": obs[-3:],             
         }
     
     def get_action(self, obs: npt.NDArray[np.float64]) -> npt.NDArray[np.float32]:
@@ -56,19 +67,17 @@ class CorrectedPolicyV2(Policy):
         # desired_pos = o_d["hand_pos"]
         delta_pos = self._calculate_pos_action(o_d["hand_pos"], to_xyz=desired_pos)
         
-        delta_rot_quat = self._calculate_rotation_action(o_d["hand_quat"], desired_r)
+        delta_rot_euler = self._calculate_rotation_action(o_d["hand_quat"], desired_r)
         # delta_rot = np.zeros(3)
         gripper_effort = self._grab_effort(o_d)
+        
+        # if self.current_stage == 4 and np.linalg.norm(o_d["pegHead_force"]) > 5:
+        #     delta_pos, delta_rot_euler = self._pos_im(o_d["pegHead_force"], o_d["pegHead_torque"], delta_pos, delta_rot_euler)
 
-        # force_vector = o_d["pegHead_force"]
-        # force_magnitude = np.linalg.norm(force_vector)
-        # if force_magnitude > 10:
-        #     delta_pos = np.zeros(3)
-        
-        full_action = np.hstack((delta_pos, delta_rot_quat, gripper_effort))
-        
+        delta_rot = Rotation.from_euler('xyz', delta_rot_euler, degrees=True)
+        delta_rot_quat = delta_rot.as_quat()
         action = Action(8)
-        action.set_action(full_action)
+        action.set_action(np.hstack((delta_pos, delta_rot_quat, gripper_effort)))
         return action.array.astype(np.float32)
 
     def _desired_pose(self, o_d: dict[str, npt.NDArray[np.float64]]) -> Tuple[npt.NDArray[Any], npt.NDArray[Any]]:
@@ -77,9 +86,6 @@ class CorrectedPolicyV2(Policy):
         pos_peg = o_d["peg_pos"]
         pos_hole = o_d["goal_pos"]
         gripper_distance = o_d["gripper_distance_apart"]
-
-        force_vector = o_d["pegHead_force"]
-        force_magnitude = np.linalg.norm(force_vector)
                    
         # 阶段1: 移动到peg正上方
         if self.current_stage == 1:
@@ -107,36 +113,9 @@ class CorrectedPolicyV2(Policy):
         # 阶段4: 执行插入
         if self.current_stage == 4 :
             # print("Stage 4: Inserting peg")
-            desir_pos = pos_hole + np.array([0.1, 0.0, 0.0])
-            
-            if force_magnitude > 10:
-                # 1. 获取peg当前的姿态（从mujoco四元数转换为scipy Rotation对象）
-                peg_current_rotation = Rotation.from_quat(o_d["peg_rot"])
-                # 2. 定义在peg局部坐标系下的力臂向量
-                lever_arm_local = np.array([-1, 0.0, 0.0])
-                # 3. 将力臂向量从局部坐标系转换到世界坐标系
-                lever_arm_world = peg_current_rotation.apply(lever_arm_local)
-                corrective_torque_vector = np.cross(lever_arm_world, force_vector)
-                # 5. 限制修正速度，保证稳定性
-                speed = np.deg2rad(1) # 最大修正角速度
-                torque_magnitude = np.linalg.norm(corrective_torque_vector)
-                if torque_magnitude > 1e-6: # 避免除以零
-                    unit_torque_axis = corrective_torque_vector / torque_magnitude
-                    # 如果计算出的旋转速度超过上限，则使用上限速度
-                    if torque_magnitude > speed:
-                        increment_rotvec = unit_torque_axis * speed
-                    else:
-                        increment_rotvec = corrective_torque_vector
-                    # 6. 生成修正旋转并更新累积的目标姿态
-                    #    这是关键修正点之二：对 self.ini_r 进行累积更新
-                    r_correction = Rotation.from_rotvec(increment_rotvec)
-                    self.ini_r = r_correction * self.ini_r
-                    desir_pos = pos_curr
+            desir_pos = pos_hole + np.array([0.3, 0.0, 0.0])
                     
-                    print(f"Force Detected: {force_magnitude:.2f} N. Applying rotational correction.")
-                    print(f"Corrected Target Euler: {r_correction.as_euler('xyz', degrees=True)}")
-                    
-            return desir_pos, self.ini_r
+            return pos_curr, self.ini_r
         return None
 
     def _calculate_pos_action(self,
@@ -156,8 +135,8 @@ class CorrectedPolicyV2(Policy):
             一个代表本次位移的XYZ向量。
         """
         error_vec = to_xyz - from_xyz
-        Kp = 0.5
-        Kd = 0.3
+        Kp = 0.1
+        Kd = 0.8
         
         distance = np.linalg.norm(error_vec)
         max_dist_per_step = speed * 0.0125
@@ -176,14 +155,54 @@ class CorrectedPolicyV2(Policy):
         self.prev_pos_error = error_vec
         return delta_pos
 
+    def _pos_im(self, force, torque, delta_pos, delta_rot_euler):
+        dt = 0.0125
+        M_d_inv = np.diag([
+            0/100.0, 0/100.0, 0/200.0,  # Mass_inv for x, y, z
+            0/0.01, 0/0.01, 0     # Inertia_inv for rot x, y, z
+        ])
+        
+        # 在所有需要柔顺的轴上都加上阻尼，防止震荡
+        # 关键是Z轴线性和XY轴旋转
+        D_d = np.diag([
+            5.0, 5.0, 8.0,      # Damping for x, y, z
+            0.5, 0.5, 0.5       # Damping for rot x, y, z
+        ])
+        
+        # 刚度可以先设为0，避免控制器抵抗有用的接触力
+        K_d = np.diag([
+            0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0
+        ])
+        
+        F_ext = np.concatenate([force, torque])
+        F_ext = np.clip(F_ext, -50, 50)
+        E_ddot = M_d_inv @ (F_ext - D_d @ self.e_dot_im - K_d @ self.e_im)
+        self.e_dot_im += E_ddot * dt
+        self.e_im +=  self.e_dot_im * dt
+
+        self.e_im[:3] = np.clip(self.e_im[:3], -0.01, 0.01) # 线性位移限制
+        self.e_im[3:] = np.clip(self.e_im[3:], -np.deg2rad(5), np.deg2rad(5)) # 旋转限制
+
+        # print(force)
+        plot_forces.append(force)
+        # print(torque)
+        plot_torque.append(torque)
+        # print(E_ddot)
+        print('-----------------')
+        delta_pos = self.e_im[0:3]
+        delta_rot_euler = self.e_im[3:6]
+        print(delta_rot_euler)
+        return delta_pos, delta_rot_euler
+    
     def _calculate_rotation_action(self, current_quat_mujoco, target_Rotation):
             """
             根据当前和目标姿态，计算出平滑的旋转增量（欧拉角格式）。
             如果角度差大于1度，则以恒定的1度角速度旋转；否则，旋转剩余的角度。
             """
-            kp = 0.3
-            kd = 0.3
-            speed = np.deg2rad(5)
+            kp = 0.1
+            kd = 0.8
+            speed = np.deg2rad(0.5)
             
             r_curr = Rotation.from_quat(current_quat_mujoco[[1, 2, 3, 0]])
             r_error = target_Rotation * r_curr.inv()
@@ -204,12 +223,12 @@ class CorrectedPolicyV2(Policy):
 
             angle_of_increment = np.linalg.norm(increment_rotvec)
             if angle_of_increment < 1e-6:
-                return np.array([0., 0., 0., 1.])
+                return np.array([0., 0., 0.])
             
             r_increment = Rotation.from_rotvec(increment_rotvec)
-            delta_rot_quat = r_increment.as_quat()
+            delta_rot_euler = r_increment.as_euler('xyz', degrees=True)
 
-            return delta_rot_quat
+            return delta_rot_euler
 
     def _grab_effort(self, o_d: dict[str, npt.NDArray[np.float64]]) -> float:
         pos_curr = o_d["hand_pos"]
@@ -221,14 +240,14 @@ class CorrectedPolicyV2(Policy):
                 return 0.4
             return -1.0
         else:
-            return 0.6
+            return 0.4
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
     env_name = 'peg-insert-side-v3'
     env_class = ppo_test.env_dict.ALL_V3_ENVIRONMENTS[env_name]
     env = env_class(render_mode='human', width=1280, height=720) # human or rgb_array
-
+    
     benchmark = ppo_test.MT1(env_name)
 
     policy = CorrectedPolicyV2()
@@ -243,7 +262,9 @@ if __name__ == "__main__":
         
         obs, info = env.reset()
         policy.reset()
-
+        env.mujoco_renderer.viewer.cam.azimuth = 245
+        env.mujoco_renderer.viewer.cam.elevation = -20
+        
         episode_forces = []
         done = False
         count = 0
@@ -286,4 +307,3 @@ if __name__ == "__main__":
     print("\nForce analysis data saved to force_analysis.csv")
     from visualize_forces import visualize_force_data
     visualize_force_data("force_analysis.csv")
-    

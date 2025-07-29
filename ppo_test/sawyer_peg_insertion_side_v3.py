@@ -68,51 +68,75 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
     def model_name(self) -> str:
         return full_V3_path_for("sawyer_peg_insertion_side.xml")
 
-    def _get_pegHead_force(self) -> npt.NDArray[np.float64]:
+    def get_peghead_force_and_torque(self) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """
-        计算并返回 pegHead_geom 在【世界坐标系】下受到的总接触力。
+        计算并返回 pegHead_geom 在世界坐标系下受到的总接触力和相对于 pegGrasp 点的总力矩。
+
+        Returns:
+            tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]: 
+            一个元组，包含：
+            - total_world_force (3,): 世界坐标系下的总受力向量。
+            - total_world_torque (3,): 世界坐标系下，相对于 pegGrasp 点的总力矩向量。
         """
+        # --- 初始化 ---
         peg_head_geom_id = self.data.geom("pegHead_geom").id
-        total_world_force = np.zeros(3) # 初始化世界坐标系下的总受力
+        total_world_force = np.zeros(3)
+        total_world_torque = np.zeros(3)
+
+        # try:
+        #     grasp_point_world = self.data.site("pegGrasp").xpos
+        # except KeyError:
+        #     grasp_point_world = self.data.body("peg").xpos
+        grasp_point_world = self.data.body("peg").xpos
         
+        # --- 遍历所有接触点 ---
         for i in range(self.data.ncon):
             contact = self.data.contact[i]
             
             # 检查当前接触是否涉及 pegHead_geom
             if contact.geom1 == peg_head_geom_id or contact.geom2 == peg_head_geom_id:
                 
-                # 步骤 1: 获取在“接触坐标系”下的力
+                # 步骤 1: 获取在“接触坐标系”下的6D力/力矩向量
                 force_contact_frame = np.zeros(6, dtype=np.float64)
                 mujoco.mj_contactForce(self.model, self.data, i, force_contact_frame)
                 
-                # 步骤 2: 获取从“接触坐标系”到“世界坐标系”的旋转矩阵
+                # 步骤 2: 将接触力从“接触坐标系”旋转到“世界坐标系”
                 contact_frame_rot = contact.frame.reshape(3, 3)
-                
-                # 步骤 3: 将接触力从“接触坐标系”旋转到“世界坐标系”
-                # @ 是Python中的矩阵乘法运算符
                 force_world_frame = contact_frame_rot @ force_contact_frame[:3]
                 
-                # 步骤 4: 根据牛顿第三定律（作用力与反作用力）确定力的方向
-                # 如果geom2是我们的传感器，力是施加于它的，方向正确
-                # 如果geom1是我们的传感器，力是由它施加的，需要取反
+                # 步骤 3: 根据牛顿第三定律确定力的正确方向
                 if contact.geom1 == peg_head_geom_id:
-                    total_world_force -= force_world_frame
+                    # 如果 geom1 是我们的传感器，力是由它施加的，我们需要反向的力
+                    force_on_peghead = -force_world_frame
                 else: # contact.geom2 == peg_head_geom_id
-                    total_world_force += force_world_frame
+                    # 如果 geom2 是我们的传感器，力是施加于它的，方向正确
+                    force_on_peghead = force_world_frame
+                
+                # --- 力矩计算 ---
+                # 步骤 4: 获取接触点在世界坐标系下的位置
+                contact_position_world = contact.pos
+                
+                # 步骤 5: 计算从抓取点到接触点的矢量（力臂）
+                lever_arm = contact_position_world - grasp_point_world
+                
+                # 步骤 6: 计算该接触力产生的力矩 (tau = r x F)
+                torque_i = np.cross(lever_arm, force_on_peghead)
+                
+                # --- 累加总力和总力矩 ---
+                total_world_force += force_on_peghead
+                total_world_torque += torque_i
         
-        return total_world_force
+        return total_world_force, total_world_torque
 
     @SawyerXYZEnv._Decorators.assert_task_is_set
     def evaluate_state(
         self, obs: npt.NDArray[np.float64], action: npt.NDArray[np.float32]
     ) -> tuple[float, dict[str, Any]]:
-        # obs structure: hand_pos(3) + quat_hand(4) + gripper_distance_apart(1) + force(3) + peg_pos(3) + peg_rot(4) + unused_info(7) + _prev_obs(25) + goal_pos(3) = 53
-        obj = obs[11:14]
+        # obs structure: hand_pos(3) + quat_hand(4) + gripper_distance_apart(1) + force(3) + torque(3) + peg_pos(3) + peg_rot(4) + unused_info(7) + _prev_obs(28) + goal_pos(3) = 59
+        obj = obs[14:17]
 
         assert self._target_pos is not None and self.obj_init_pos is not None
         
-        # Updated observation parsing for new 53-dimensional observation space
-        obj = obs[11:14]
         obj_head = self._get_site_pos("pegHead")
         
         tcp_opened: float = obs[7] 
@@ -143,7 +167,8 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         )
             
         near_object = float(tcp_to_obj <= 0.03)
-
+        
+        peg_force, peg_torque = self.get_peghead_force_and_torque()
         info = {
             "success": success,
             "near_object": near_object,
@@ -152,7 +177,8 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             "in_place_reward": in_place_reward,
             "obj_to_target": obj_to_target,
             "unscaled_reward": reward,
-            "pegHead_force": self._get_pegHead_force()
+            "pegHead_force": peg_force,
+            "pegHead_torque": peg_torque
         }
 
         return reward, info

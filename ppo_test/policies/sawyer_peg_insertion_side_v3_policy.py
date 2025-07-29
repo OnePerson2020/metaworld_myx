@@ -20,23 +20,25 @@ class SawyerPegInsertionSideV3Policy(Policy):
         # 3-6: quat_hand (4)
         # 7: gripper_distance_apart (1)
         # 8-10: pegHead_force (3)
-        # 11-13: peg_pos (3)        
-        # 14-17: peg_rot (4)        
-        # 18-24: unused_info_curr_obs (7)
-        # Total curr_obs = 3 + 4 + 1 + 3 + 3 + 4 + 7 = 25
+        # 11-13
+        # 14-17: peg_pos (3)        
+        # 17-20: peg_rot (4)        
+        # 21-27: unused_info_curr_obs (7)
+        # Total curr_obs = 3 + 4 + 1 + 3 + 3+ 3 + 4 + 7 = 28
 
-        # 25-49: _prev_obs (25)
-        # 50-52: goal_pos (3)
-        # Total observation length = 53
+        # 28-55: _prev_obs (28)
+        # 56-58: goal_pos (3)
+        # Total observation length = 59
         return {
             "hand_pos": obs[:3],
             "quat_hand": obs[3:7],
             "gripper_distance_apart": obs[7],
-            "pegHead_force": obs[8:11],       
-            "peg_pos": obs[11:14],            
-            "peg_rot": obs[14:18],            
-            "unused_info_curr_obs": obs[18:25],
-            "_prev_obs": obs[25:50],          
+            "pegHead_force": obs[8:11],
+            "pegHead_force": obs[11:14],       
+            "peg_pos": obs[14:17],            
+            "peg_rot": obs[17:21],            
+            "unused_info_curr_obs": obs[21:28],
+            "_prev_obs": obs[28:56],          
             "goal_pos": obs[-3:],             
         }
 

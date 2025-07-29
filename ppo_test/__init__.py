@@ -10,7 +10,6 @@ import gymnasium as gym
 import numpy as np
 import numpy.typing as npt
 
-# noqa: D104
 from gymnasium.envs.registration import register
 
 import ppo_test.env_dict as _env_dict

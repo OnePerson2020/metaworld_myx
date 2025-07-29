@@ -9,7 +9,7 @@
 
         <body name="peg" pos="0 0.6 0.03">
           <inertial pos="0 0 0" mass="1" diaginertia="0.001 0.001 0.001"/>
-          <geom name="peg" euler="0 1.57 0" size="0.015 0.015 0.12" type="box" mass=".1" rgba="0.3 1 0.3 1" conaffinity="1" contype="1" group="1"/>
+          <geom name="peg" euler="0 1.57 0" size="0.015 0.015 0.12" type="box" mass=".1" rgba="0.3 1 0.3 1" conaffinity="1" contype="1" group="1" solimp="0.95 0.99 0.01" solref="0.01 1"/>
           <geom name="pegHead_geom" type="box" size="0.005 0.016 0.016" pos="-0.12 0 0" mass=".001" rgba="1 0 0 0.5" conaffinity="1" contype="1" group="1"/>
           <joint type="free" limited="false" damping="0.005"/>
           <site name="pegHead" pos="-0.1 0 0" size="0.005" rgba="0.8 0 0 1"/>
@@ -31,7 +31,7 @@
     </actuator>
 
     <equality>
-        <weld body1="mocap" body2="hand" solref="0.0001 1"></weld>
+        <weld body1="mocap" body2="hand" solref="0.01 1"></weld>
     </equality>
 
 </mujoco>
