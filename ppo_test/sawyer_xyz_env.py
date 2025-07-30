@@ -507,7 +507,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             [np.hstack((pos, quat)) for pos, quat in zip(obj_pos_split, obj_quat_split)]
         )
         try:
-            pegHead_force, pegHead_torque = self.get_peghead_force_and_torque()
+            pegHead_force, pegHead_torque = self.get_peg_contact_wrench()
         except NotImplementedError:
             pegHead_force = np.zeros(3)
             pegHead_torque = np.zeros(3)

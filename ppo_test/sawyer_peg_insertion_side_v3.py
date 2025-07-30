@@ -68,6 +68,30 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
     def model_name(self) -> str:
         return full_V3_path_for("sawyer_peg_insertion_side.xml")
 
+    def get_peg_contact_wrench(self) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        """
+        使用 data.cfrc_ext 获取施加在 peg 物体上的纯净外部接触力与力矩。
+        这些值已经补偿了惯性力和重力。
+        
+        Returns:
+            tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]: 
+            一个元组，包含：
+            - contact_force (3,): 在世界坐标系下，作用于peg质心的总接触力。
+            - contact_torque (3,): 在世界坐标系下，作用于peg质心的总接触力矩。
+        """
+        # 获取 peg 物体的 ID
+        peg_body_id = self.data.body("peg").id
+        
+        # data.cfrc_ext 是一个 (nbody, 6) 的数组
+        # 每一行包含一个物体的 [力(3), 力矩(3)]
+        # 我们通过 body ID 来索引
+        wrench = self.data.cfrc_ext[peg_body_id]
+        
+        contact_force = wrench[:3]
+        contact_torque = wrench[3:]
+        
+        return contact_force.copy(), contact_torque.copy()
+
     def get_peghead_force_and_torque(self) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """
         计算并返回 pegHead_geom 在世界坐标系下受到的总接触力和相对于 pegGrasp 点的总力矩。
@@ -155,20 +179,13 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             and (obj[2] - 0.01 > self.obj_init_pos[2])
         )
         
-        success_arrive = float(
-            obj_to_target <= 0.07
-        )
-        
-        # if success_arrive: print(target[0] - obj_head[0])
-        
         success = float(
-            success_arrive
-            and target[0] - obj_head[0] >= 0.01
+            obj_to_target <= 0.03
         )
             
         near_object = float(tcp_to_obj <= 0.03)
         
-        peg_force, peg_torque = self.get_peghead_force_and_torque()
+        peg_force, peg_torque = self.get_peg_contact_wrench()
         info = {
             "success": success,
             "near_object": near_object,
