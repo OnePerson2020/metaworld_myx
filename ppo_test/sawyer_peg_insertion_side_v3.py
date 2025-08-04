@@ -14,7 +14,8 @@ from ppo_test.asset_path_utils import full_V3_path_for
 from ppo_test.sawyer_xyz_env import RenderMode, SawyerXYZEnv
 from ppo_test.utils import reward_utils
 
-quat_box = Rotation.from_euler('xyz', [0, 0, 90+15], degrees=True).as_quat()[[3,0, 1, 2]]
+box_raw = 17
+quat_box = Rotation.from_euler('xyz', [0, 0, 90+box_raw], degrees=True).as_quat()[[3,0, 1, 2]]
 
 class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
     TARGET_RADIUS: float = 0.07
@@ -68,30 +69,18 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
     def model_name(self) -> str:
         return full_V3_path_for("sawyer_peg_insertion_side.xml")
 
-    def get_peg_contact_wrench(self) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    def get_peg_force_and_torque_from_sensor(self) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """
-        使用 data.cfrc_ext 获取施加在 peg 物体上的纯净外部接触力与力矩。
-        这些值已经补偿了惯性力和重力。
-        
-        Returns:
-            tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]: 
-            一个元组，包含：
-            - contact_force (3,): 在世界坐标系下，作用于peg质心的总接触力。
-            - contact_torque (3,): 在世界坐标系下，作用于peg质心的总接触力矩。
+        从内置的MuJoCo传感器中直接读取peg头部的力和力矩。
         """
-        # 获取 peg 物体的 ID
-        peg_body_id = self.data.body("peg").id
+        # data.sensordata 是一个包含所有传感器读数的一维数组
+        # 我们可以通过名称找到每个传感器的读数
+        force_reading = self.data.sensor("peg_force_sensor").data
+        torque_reading = self.data.sensor("peg_torque_sensor").data
         
-        # data.cfrc_ext 是一个 (nbody, 6) 的数组
-        # 每一行包含一个物体的 [力(3), 力矩(3)]
-        # 我们通过 body ID 来索引
-        wrench = self.data.cfrc_ext[peg_body_id]
-        
-        contact_force = wrench[:3]
-        contact_torque = wrench[3:]
-        
-        return contact_force.copy(), contact_torque.copy()
-
+        # force_reading 和 torque_reading 都已经是 (3,) 的 numpy 数组
+        return force_reading.copy(), torque_reading.copy()
+    
     def get_peghead_force_and_torque(self) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """
         计算并返回 pegHead_geom 在世界坐标系下受到的总接触力和相对于 pegGrasp 点的总力矩。
@@ -180,12 +169,12 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         )
         
         success = float(
-            obj_to_target <= 0.03
+            obj_to_target <= 0.008
         )
             
         near_object = float(tcp_to_obj <= 0.03)
         
-        peg_force, peg_torque = self.get_peg_contact_wrench()
+        peg_force, peg_torque = self.get_peghead_force_and_torque()
         info = {
             "success": success,
             "near_object": near_object,
@@ -217,7 +206,9 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         self._set_obj_xyz(self.obj_init_pos)
         self.model.body("box").pos = pos_box
         self.model.body("box").quat = quat_box
-        self._target_pos = pos_box + np.array([0.03, 0.0, 0.13])
+        self._target_pos = pos_box + Rotation.from_euler('xyz', [0,0,box_raw], degrees=True).apply(np.array([0.03, 0.0, 0.15]))
+        # self._target_pos = pos_box + np.array([0.03, 0.0, 0.15])
+        
         self.model.site("goal").pos = self._target_pos
 
         self.objHeight = self.get_body_com("peg").copy()[2]
@@ -231,7 +222,7 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         target = self._target_pos
         tcp = self.tcp_center
         obj_head = self._get_site_pos("pegHead")
-        scale = np.array([1.0, 2.0, 2.0])
+        scale = np.array([1.0, 2.0, 2.0]) / 3.0
         
         tcp_to_obj = float(np.linalg.norm(obj - tcp))
         obj_to_target = float(np.linalg.norm((obj_head - target) * scale))

@@ -12,25 +12,25 @@
             <geom class="peg_block_col" pos="0.06 0.01 0.13" size="0.03 0.086 0.03" type="box" mass="1000"/>
             <geom class="peg_block_col" pos="0 0.01 0.175" size="0.09 0.086 0.015" type="box" mass="1000"/>
 
-            <geom type="box" conaffinity="1" contype="1" material="peg_block_wood"
+            <!-- <geom type="box" conaffinity="1" contype="1" group="1" material="peg_block_wood"
                   size="0.03 0.017071 0.005"
                   pos="0 -0.101 0.175"
                   euler="-45 0 0"/>
-
-            <geom type="box" conaffinity="1" contype="1" material="peg_block_wood"
+            
+            <geom type="box" conaffinity="1" contype="1" group="1" material="peg_block_wood"
                   size="0.03 0.017071 0.005"
                   pos="0 -0.101 0.085"
                   euler="45 0 0"/>
 
-            <geom type="box" conaffinity="1" contype="1" material="peg_block_wood"
+            <geom type="box" conaffinity="1" contype="1" group="1" material="peg_block_wood"
                   size="0.017071 0.005 0.03"
                   pos="-0.042 -0.11 0.13"
                   euler="0 0 45"/>
 
-            <geom type="box" conaffinity="1" contype="1" material="peg_block_wood"
+            <geom type="box" conaffinity="1" contype="1" group="1" material="peg_block_wood"
                   size="0.017071 0.005 0.03"
                   pos="0.042 -0.11 0.13"
-                  euler="0 0 -45"/>
+                  euler="0 0 -45"/> -->
 
             <site name="hole" pos="0 -.096 0.13" size="0.005" rgba="0 0.8 0 1"/>
             <site name="bottom_right_corner_collision_box_1" pos="0.1 -0.11 0.01" size="0.0001"/>

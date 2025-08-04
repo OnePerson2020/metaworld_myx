@@ -1,6 +1,3 @@
-import re
-
-from matplotlib.pyplot import plot
 import matplotlib.pyplot as plt
 import ppo_test
 import time
@@ -19,6 +16,7 @@ from ppo_test.policies.policy import Policy, assert_fully_parsed
 
 # --- 全局变量用于暂停功能 ---
 is_paused = False
+d_raw = 17
 
 def key_callback(key):
     """用于处理键盘输入的函数"""
@@ -91,18 +89,16 @@ class ActionVisualizer:
 
 class CorrectedPolicyV2(Policy):
 
-    def __init__(self, force_feedback_gain=1, force_threshold=15):
+    def __init__(self):
 
         super().__init__()
-        self.force_feedback_gain = force_feedback_gain
-        self.force_threshold = force_threshold
         self.current_stage = 1
         self.gasp = False
         self.prev_r_error_rotvec = np.zeros(3)
         self.prev_pos_error = np.zeros(3)
         self.e_im = np.zeros(6)
         self.e_dot_im = np.zeros(6)
-        self.ini_r = Rotation.from_quat([0,1,0,1])
+        self.ini_r = Rotation.from_euler('xyz', [0, 90, 0], degrees=True)
 
     def reset(self):
         print("Resetting policy stage to 1.")
@@ -112,7 +108,7 @@ class CorrectedPolicyV2(Policy):
         self.prev_pos_error = np.zeros(3)
         self.e_im = np.zeros(6)
         self.e_dot_im = np.zeros(6)
-        self.ini_r = Rotation.from_quat([0,1,0,1])
+        self.ini_r = Rotation.from_euler('xyz', [0, 90, 0], degrees=True)
 
     @staticmethod
     @assert_fully_parsed
@@ -140,8 +136,8 @@ class CorrectedPolicyV2(Policy):
         delta_rot_euler = self._calculate_rotation_action(o_d["hand_quat"], desired_r)
         gripper_effort = self._grab_effort(o_d)
         
-        if self.current_stage == 4 and np.linalg.norm(o_d["pegHead_force"]) > 5:
-            delta_pos, delta_rot_euler = self._pos_im(o_d["pegHead_force"], o_d["pegHead_torque"], delta_pos, delta_rot_euler)
+        # if self.current_stage == 4 and np.linalg.norm(o_d["pegHead_force"]) > 5:
+        #     delta_pos, delta_rot_euler = self._pos_im(o_d["pegHead_force"], o_d["pegHead_torque"], delta_pos, delta_rot_euler)
         
         # 将数据传递给可视化器
         if 'visualizer' in globals() and visualizer is not None:
@@ -155,6 +151,7 @@ class CorrectedPolicyV2(Policy):
 
     def _desired_pose(self, o_d: dict[str, npt.NDArray[np.float64]]) -> Tuple[npt.NDArray[Any], npt.NDArray[Any]]:
         pos_curr, pos_peg, pos_hole, gripper_distance = o_d["hand_pos"], o_d["peg_pos"], o_d["goal_pos"], o_d["gripper_distance_apart"]
+        
         if self.current_stage == 1:
             if np.linalg.norm(pos_curr[:2] - pos_peg[:2]) < 0.04: self.current_stage = 2
             return pos_peg + np.array([0.0, 0.0, 0.3]), self.ini_r
@@ -162,11 +159,13 @@ class CorrectedPolicyV2(Policy):
             if pos_curr[2] - pos_peg[2] < 0.01 and gripper_distance < 0.45: print(">>> Peg lifted! Transitioning to Stage 3."); self.current_stage = 3
             return pos_peg - np.array([0.0, 0.0, 0.02]), self.ini_r
         if self.current_stage == 3:
-            if np.linalg.norm(pos_curr[1:] - pos_hole[1:]) < 0.03: self.current_stage = 4
-            return pos_hole + np.array([0.4, 0.0, 0.0]), self.ini_r
+            desir_3_pos = self.compute_peg_tip_position(pos_hole, [0,0,d_raw], L=0.32)
+            if np.linalg.norm(pos_curr[1:] - desir_3_pos[1:]) < 0.03: self.current_stage = 4
+            return desir_3_pos, self.ini_r
         if self.current_stage == 4:
-            return pos_hole + np.array([0.1, 0.0, 0.0]), self.ini_r
+            return self.compute_peg_tip_position(pos_hole, [0,0,d_raw], L=0.08), Rotation.from_euler('xyz', [-d_raw, 90, 0], degrees=True)
         return None, None
+    
     def _calculate_pos_action(self, from_xyz: npt.NDArray[any], to_xyz: npt.NDArray[any], speed: float = 0.2) -> npt.NDArray[any]:
         error_vec = to_xyz - from_xyz; Kp = 0.3; Kd = 0.5
         error_vec_pd = Kp * error_vec + Kd * self.prev_pos_error
@@ -177,19 +176,19 @@ class CorrectedPolicyV2(Policy):
         self.prev_pos_error = error_vec
         return delta_pos
     def _pos_im(self, force, torque, delta_pos, delta_rot_euler):
-        dt = 0.0125; M_d_inv = np.diag([0, 5e-4, 0, 0, 0, 0])
-        D_d = np.diag([0.8, 0.3, 0.8, 0.5, 0.5, 0.5]); K_d = np.diag([0.8, 0.5, 0.8, 0.5, 0.5, 0.5])
+        dt = 0.0125; M_d_inv = np.diag([0, 0.01, 0.01, 0, 0.1, 0.1])
+        D_d = np.diag([0, 0.3, 0.3, 0, 0.5, 0.5]); K_d = np.diag([0, 0.4, 0.4, 0., 0.8, 0.8])
         F_ext = np.clip(np.concatenate([force, torque]), -50, 50)
         E_ddot = M_d_inv @ (F_ext - D_d @ self.e_dot_im - K_d @ self.e_im)
         self.e_dot_im += E_ddot * dt; self.e_im += self.e_dot_im * dt
         limit_e = 0.2 * 0.0125
         self.e_im[:3] = np.clip(self.e_im[:3], -limit_e, limit_e)
         self.e_im[3:] = np.clip(self.e_im[3:], -np.deg2rad(5), np.deg2rad(5))
-        delta_pos = self.e_im[0:3]; delta_rot_euler += np.rad2deg(self.e_im[3:6])
+        delta_pos = self.e_im[0:3]; delta_rot_euler = np.rad2deg(self.e_im[3:6])
         return delta_pos, delta_rot_euler
     def _calculate_rotation_action(self, current_quat_mujoco, target_Rotation):
         if target_Rotation is None: return np.zeros(3)
-        kp=0.1; kd=0.8; speed=np.deg2rad(0.5)
+        kp=0.1; kd=0.8; speed=np.deg2rad(0.8)
         r_curr = Rotation.from_quat(current_quat_mujoco[[1, 2, 3, 0]])
         r_error = target_Rotation * r_curr.inv()
         error_rotvec = r_error.as_rotvec()
@@ -207,7 +206,35 @@ class CorrectedPolicyV2(Policy):
         if not self.gasp:
             if np.linalg.norm(pos_curr[:2] - pos_peg[:2]) < 0.04 and (pos_curr[2] - pos_peg[2]) < 0.01: self.gasp = True; return 0.4
             return -1.0
-        return 0.4
+        return 0.8
+
+    def compute_peg_tip_position(self,peg_head_pos, peg_euler, L):
+        """
+        根据钉头位置、钉子旋转四元数和长度，计算钉子末端（插入端）的位置。
+
+        Args:
+            peg_head_pos (np.ndarray): 钉头位置, shape (3,)
+            peg_quat (np.ndarray): 钉子的旋转四元数 [w, x, y, z]
+            L (float): 钉子长度
+
+        Returns:
+            np.ndarray: 钉子末端（插入端）在世界坐标系中的位置, shape (3,)
+        """
+        # 将四元数转换为 Rotation 对象
+        # 注意：scipy 的 Rotation 使用 [x, y, z, w] 顺序
+        r = Rotation.from_euler('xyz', peg_euler, degrees=True)
+
+        # 定义在 peg 本地坐标系中，从头部指向末端的单位方向向量
+        # 假设 peg 初始沿 -z 方向延伸
+        local_tip_direction = np.array([1, 0, 0])  # 从头部指向末端
+
+        # 将该方向向量旋转到世界坐标系
+        world_tip_direction = r.apply(local_tip_direction)
+
+        # 计算末端位置 = 钉头位置 + 方向向量 * 长度
+        peg_tip_pos = peg_head_pos + L * world_tip_direction
+
+        return peg_tip_pos
 
 if __name__ == "__main__":
     env_name = 'peg-insert-side-v3'
@@ -250,15 +277,20 @@ if __name__ == "__main__":
             # 从策略中获取action（不再在policy内部更新图表）
             o_d = policy._parse_obs(obs)
             desired_pos, desired_r = policy._desired_pose(o_d)
-            delta_pos = policy._calculate_pos_action(o_d["hand_pos"], to_xyz=desired_pos)
-            delta_rot_euler = policy._calculate_rotation_action(o_d["hand_quat"], desired_r)
+            if policy.current_stage == 4:
+                delta_pos = policy._calculate_pos_action(o_d["hand_pos"], to_xyz=desired_pos, speed= 0.1)
+                delta_rot_euler = policy._calculate_rotation_action(o_d["hand_quat"], desired_r)
+                # if np.linalg.norm(o_d["pegHead_force"]) > 1:
+                #     delta_pos, delta_rot_euler = policy._pos_im(o_d["pegHead_force"], o_d["pegHead_torque"], delta_pos, delta_rot_euler)
+            else:
+                delta_pos = policy._calculate_pos_action(o_d["hand_pos"], to_xyz=desired_pos)
+                delta_rot_euler = policy._calculate_rotation_action(o_d["hand_quat"], desired_r)
+                
             gripper_effort = policy._grab_effort(o_d)
-            if policy.current_stage == 4 and np.linalg.norm(o_d["pegHead_force"]) > 5:
-                delta_pos, delta_rot_euler = policy._pos_im(o_d["pegHead_force"], o_d["pegHead_torque"], delta_pos, delta_rot_euler)
             
             visualizer.step()
             if count % UPDATE_VISUALIZER_EVERY_N_STEPS == 0:
-                visualizer.update(delta_pos, o_d["pegHead_force"], gripper_effort)
+                visualizer.update(delta_rot_euler, o_d["pegHead_torque"], gripper_effort)
 
             delta_rot = Rotation.from_euler('xyz', delta_rot_euler, degrees=True)
             delta_rot_quat = delta_rot.as_quat()
