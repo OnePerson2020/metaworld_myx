@@ -139,10 +139,6 @@ class CorrectedPolicyV2(Policy):
         # if self.current_stage == 4 and np.linalg.norm(o_d["pegHead_force"]) > 5:
         #     delta_pos, delta_rot_euler = self._pos_im(o_d["pegHead_force"], o_d["pegHead_torque"], delta_pos, delta_rot_euler)
         
-        # 将数据传递给可视化器
-        if 'visualizer' in globals() and visualizer is not None:
-             visualizer.update(delta_pos, delta_rot_euler, gripper_effort)
-
         delta_rot = Rotation.from_euler('xyz', delta_rot_euler, degrees=True)
         delta_rot_quat = delta_rot.as_quat()
         action = Action(8)
@@ -245,9 +241,15 @@ if __name__ == "__main__":
     benchmark = ppo_test.MT1(env_name)
     policy = CorrectedPolicyV2()
     
-    visualizer = ActionVisualizer(window_size=100)
+    IS_VISUALIZER_ENABLED = False 
+    UPDATE_VISUALIZER_EVERY_N_STEPS = 5 
     
-    UPDATE_VISUALIZER_EVERY_N_STEPS = 5 # 设置为1则每步都画，数字越大仿真越快
+    visualizer = None
+    if IS_VISUALIZER_ENABLED:
+        print("Action visualizer is ENABLED.")
+        visualizer = ActionVisualizer(window_size=100) # 仅在启用时创建实例
+    else:
+        print("Action visualizer is DISABLED.")
     
     all_force_data = []
     num_episodes = 3
@@ -258,7 +260,9 @@ if __name__ == "__main__":
         
         obs, info = env.reset()
         policy.reset()
-        visualizer.reset() 
+        if IS_VISUALIZER_ENABLED:
+            visualizer.reset() # 仅在启用时重置
+        
         env.mujoco_renderer.viewer.key_callback = key_callback
         env.mujoco_renderer.viewer.cam.azimuth = 245
         env.mujoco_renderer.viewer.cam.elevation = -20
@@ -267,18 +271,16 @@ if __name__ == "__main__":
         done = False
         count = 0
         while count < 500 and not done:
-            # --- 关键改动：检查暂停状态 ---
             while is_paused:
-                env.render() # 暂停时也要持续渲染，否则窗口会无响应
-                time.sleep(0.1) # 避免CPU空转
+                env.render()
+                time.sleep(0.1)
 
             env.render()
             
-            # 从策略中获取action（不再在policy内部更新图表）
             o_d = policy._parse_obs(obs)
             desired_pos, desired_r = policy._desired_pose(o_d)
             if policy.current_stage == 4:
-                delta_pos = policy._calculate_pos_action(o_d["hand_pos"], to_xyz=desired_pos, speed= 0.1)
+                delta_pos = policy._calculate_pos_action(o_d["hand_pos"], to_xyz=desired_pos, speed=0.1)
                 delta_rot_euler = policy._calculate_rotation_action(o_d["hand_quat"], desired_r)
                 # if np.linalg.norm(o_d["pegHead_force"]) > 1:
                 #     delta_pos, delta_rot_euler = policy._pos_im(o_d["pegHead_force"], o_d["pegHead_torque"], delta_pos, delta_rot_euler)
@@ -288,29 +290,37 @@ if __name__ == "__main__":
                 
             gripper_effort = policy._grab_effort(o_d)
             
-            visualizer.step()
-            if count % UPDATE_VISUALIZER_EVERY_N_STEPS == 0:
-                visualizer.update(delta_rot_euler, o_d["pegHead_torque"], gripper_effort)
+            if IS_VISUALIZER_ENABLED:
+                visualizer.step()
+                if count % UPDATE_VISUALIZER_EVERY_N_STEPS == 0: 
+                    visualizer.update(delta_rot_euler, o_d["pegHead_torque"], gripper_effort)
 
             delta_rot = Rotation.from_euler('xyz', delta_rot_euler, degrees=True)
             delta_rot_quat = delta_rot.as_quat()
             action = Action(8)
             action.set_action(np.hstack((delta_pos, delta_rot_quat, gripper_effort)))
             obs, reward, terminated, truncated, info = env.step(action.array.astype(np.float32))
-            
-            force = info.get('pegHead_force', np.zeros(3)); force_magnitude = np.linalg.norm(force)
+            force = info.get('pegHead_force', np.zeros(3))
+            force_magnitude = np.linalg.norm(force)
             episode_forces.append({'step': count, 'magnitude': force_magnitude, 'direction_x': force[0], 'direction_y': force[1], 'direction_z': force[2]})
+            
             done = terminated or truncated
-            if info.get('success', 0.0) > 0.5: print("任务成功！"); break
+            if info.get('success', 0.0) > 0.5: 
+                print("任务成功！")
+                break
             count += 1
         
-        for data_point in episode_forces: data_point['episode'] = i + 1
+        for data_point in episode_forces: 
+            data_point['episode'] = i + 1
         all_force_data.extend(episode_forces)
-        print(f"Episode finished. Final Info: {info}")
+        
+        success_status = bool(info.get('success', 0.0))
+        print(f"Episode finished. Success: {success_status}")
 
     print("All episodes finished. Closing environment.")
     env.close()
-    visualizer.close()
+    if IS_VISUALIZER_ENABLED:
+        visualizer.close() # 条件性关闭
     
     df = pd.DataFrame(all_force_data)
     df.to_csv("force_analysis.csv", index=False)
@@ -325,5 +335,6 @@ if __name__ == "__main__":
         print(f"An error occurred during force visualization: {e}")
 
     print("\nSimulation finished. Close the plot window to exit.")
-    plt.ioff()
-    plt.show()
+    if IS_VISUALIZER_ENABLED:
+        plt.ioff()
+        plt.show()

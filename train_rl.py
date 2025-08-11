@@ -1,44 +1,75 @@
-import ppo_test  # 导入您的环境包
+import ppo_test
 from stable_baselines3 import PPO
+# 导入 Monitor
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.callbacks import EvalCallback
 import os
+import torch
 
 if __name__ == "__main__":
     # --- 1. 环境准备 ---
-    # 使用您在 ppo_test/__init__.py 中定义的函数创建环境
-    # 这个函数已经包含了所有必要的包装器，非常适合训练
     env_name = 'peg-insert-side-v3'
-    env = ppo_test.make_mt_envs(
-        name=env_name,
-        render_mode=None,  # 训练时关闭渲染以提高速度
-        # render_mode='human', # 如果想在训练时观察，取消这行注释
-    )
-
-    # --- 2. 模型定义 ---
-    # 定义模型保存的路径
     log_dir = "rl_models"
+    
     os.makedirs(log_dir, exist_ok=True)
-    model_path = os.path.join(log_dir, "ppo_peg_insert_v3")
 
-    # 定义PPO模型
-    # "MlpPolicy": 使用标准的多层感知机作为策略网络
-    # env: 告诉模型在哪个环境中学习
-    # verbose=1: 在训练时打印学习进度
+    # 创建训练环境
+    # PPO/A2C等算法在内部处理统计，所以训练环境不强制要求Monitor，但加上也无妨
+    train_env = Monitor(ppo_test.make_mt_envs(
+        name=env_name,
+        render_mode=None,
+    ))
+
+    # --- 2. 评估回调 (Best Practice) ---
+    eval_env = Monitor(ppo_test.make_mt_envs(name=env_name, render_mode=None))
+    
+    # EvalCallback 会在训练过程中定期评估模型，并只保存表现最好的模型
+    eval_callback = EvalCallback(
+        eval_env, # 使用包装后的环境
+        best_model_save_path=log_dir,
+        log_path=log_dir,
+        eval_freq=5000,
+        deterministic=True,
+        render=False
+    )
+    
+    # --- 3. 模型定义 (使用优化的超参数) ---
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+
     model = PPO(
         "MlpPolicy",
-        env,
+        train_env, # 使用包装后的训练环境
         verbose=1,
-        tensorboard_log="./ppo_tensorboard/" # 可选：保存TensorBoard日志
+        n_steps=2048,
+        batch_size=64,
+        n_epochs=10,
+        gamma=0.99,
+        gae_lambda=0.95,
+        ent_coef=0.01,
+        vf_coef=0.5,
+        max_grad_norm=0.5,
+        tensorboard_log="./ppo_tensorboard/",
+        device=device
     )
 
-    # --- 3. 开始训练 ---
-    # total_timesteps: 训练的总步数，可以先设小一点测试，例如 50000
-    # 然后根据效果增加到 200000 或更多
+    # --- 4. 开始训练 ---
+    total_timesteps = 500000 
     print(f"开始在 {env_name} 环境中训练PPO模型...")
-    model.learn(total_timesteps=50000)
+    print(f"总训练步数: {total_timesteps}")
+    
+    model.learn(
+        total_timesteps=total_timesteps,
+        callback=eval_callback,
+        progress_bar=True
+    )
     print("训练完成！")
 
-    # --- 4. 保存模型 ---
-    model.save(model_path)
-    print(f"模型已保存至: {model_path}.zip")
+    # --- 5. 保存最终模型 ---
+    final_model_path = os.path.join(log_dir, "ppo_peg_insert_v3_final")
+    model.save(final_model_path)
+    print(f"最好的模型已由Callback自动保存至: {log_dir}/best_model.zip")
+    print(f"最终模型已保存至: {final_model_path}.zip")
 
-    env.close()
+    train_env.close()
+    eval_env.close()

@@ -589,12 +589,6 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
 
     def _get_obs_dict(self) -> ObservationDict:
         obs = self._get_obs()
-        # The state_achieved_goal should be the end-effector position (3) + quaternion (4) = 7 elements
-        # The current observation is pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + 3 (force) + obs_obj_padded (14) = 25
-        # The previous observation is 25 elements
-        # The goal is 3 elements
-        # Total observation is 25 + 25 + 3 = 53
-        # state_achieved_goal should be the current end-effector pos and quat, which are the first 7 elements of curr_obs
         return dict(
             state_observation=obs,
             state_desired_goal=self._get_pos_goal(),
