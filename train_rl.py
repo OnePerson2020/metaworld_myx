@@ -1,34 +1,54 @@
 import ppo_test
 from stable_baselines3 import PPO
-# 导入 Monitor
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback
+# 导入矢量化环境相关的工具
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import SubprocVecEnv
 import os
 import torch
+
+# 建议将创建单个环境的函数封装起来
+# 这样 make_vec_env 才能正确调用它
+def make_env(env_name, render_mode=None):
+    # 假设 ppo_test.make_mt_envs 创建并返回一个环境实例
+    env = ppo_test.make_mt_envs(name=env_name, render_mode=render_mode)
+    # Monitor 最好在创建单个环境时就包装好
+    env = Monitor(env)
+    return env
 
 if __name__ == "__main__":
     # --- 1. 环境准备 ---
     env_name = 'peg-insert-side-v3'
     log_dir = "rl_models"
-    
     os.makedirs(log_dir, exist_ok=True)
-
-    # 创建训练环境
-    # PPO/A2C等算法在内部处理统计，所以训练环境不强制要求Monitor，但加上也无妨
-    train_env = Monitor(ppo_test.make_mt_envs(
-        name=env_name,
-        render_mode=None,
-    ))
-
-    # --- 2. 评估回调 (Best Practice) ---
-    eval_env = Monitor(ppo_test.make_mt_envs(name=env_name, render_mode=None))
     
-    # EvalCallback 会在训练过程中定期评估模型，并只保存表现最好的模型
+    # 获取可用的CPU核心数，作为并行环境的数量
+    num_cpu = os.cpu_count() or 4 # 如果获取失败，则默认为4
+    print(f"使用 {num_cpu} 个并行环境进行训练。")
+
+    # (核心修改) 创建矢量化训练环境
+    # SubprocVecEnv 会在独立的进程中运行每个环境，实现真正的并行
+    train_env = make_vec_env(
+        make_env, 
+        n_envs=num_cpu, 
+        vec_env_cls=SubprocVecEnv,
+        # 传递给 make_env 的参数
+        env_kwargs=dict(env_name=env_name, render_mode=None) 
+    )
+
+    # --- 2. 评估回调 ---
+    # 评估环境通常只需要一个
+    eval_env = make_vec_env(make_env, n_envs=1, env_kwargs=dict(env_name=env_name, render_mode=None))
+    
     eval_callback = EvalCallback(
-        eval_env, # 使用包装后的环境
+        eval_env,
         best_model_save_path=log_dir,
         log_path=log_dir,
-        eval_freq=5000,
+        # eval_freq 需要根据并行环境数调整。
+        # 原来是5000，现在总步数是 num_cpu 倍速，可以适当增加频率
+        # eval_freq 的值是总时间步数，不是单个环境的步数，所以可以保持不变或按需调整
+        eval_freq=max(5000 // num_cpu, 512),
         deterministic=True,
         render=False
     )
@@ -39,10 +59,10 @@ if __name__ == "__main__":
 
     model = PPO(
         "MlpPolicy",
-        train_env, # 使用包装后的训练环境
+        train_env, # 使用矢量化环境
         verbose=1,
-        n_steps=2048,
-        batch_size=64,
+        n_steps=2048, # 每个环境收集 n_steps / num_cpu 步
+        batch_size=256, # (关键修改) 增大 batch_size
         n_epochs=10,
         gamma=0.99,
         gae_lambda=0.95,

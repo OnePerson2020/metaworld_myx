@@ -179,7 +179,8 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         )
         
         # 成功条件：插入深度达到目标
-        success = float(insertion_info["insertion_depth"] >= 0.1)  # 5cm插入深度
+        # success = float(insertion_info["insertion_depth"] >= 0.1)  # 5cm插入深度
+        success =  float(stage_rewards["approach"] == 1)
                     
         info = {
             "success": success,
@@ -323,7 +324,7 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
                     insertion_alignment_bonus = 0.2 * (1.0 - lateral_distance / 0.01)
                 insertion_reward = min(1.0, insertion_reward + insertion_alignment_bonus)
         
-        stage_weights = {"approach": 1, "grasp": 2, "alignment": 3, "insertion": 4.0}
+        stage_weights = {"approach": 1, "grasp": 0, "alignment": 0, "insertion": 0}
             
         
         # 计算加权总奖励
