@@ -4,8 +4,8 @@ import time
 import numpy as np
 
 # --- 1. 加载训练好的模型 ---
-# 注意：我们加载由EvalCallback保存的 'best_model.zip'
-model_path = "rl_models/ppo_peg_insert_v3_final.zip" 
+# model_path = "rl_models/ppo_peg_insert_v3_final.zip"
+model_path = "rl_models/ppo_approach_stage_final.zip"
 try:
     model = PPO.load(model_path)
     print(f"从 {model_path} 加载模型成功！")
@@ -46,6 +46,7 @@ for i in range(num_episodes):
         action, _states = model.predict(obs, deterministic=True)
         
         obs, reward, terminated, truncated, info = env.step(action)
+        print(reward)
         episode_reward += reward
         env.render()
         

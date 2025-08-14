@@ -27,17 +27,6 @@ RenderMode: TypeAlias = "Literal['human', 'rgb_array', 'depth_array']"
 class SawyerMocapBase(mjenv_gym):
     """Provides some commonly-shared functions for Sawyer Mujoco envs that use mocap for XYZ control."""
 
-    mocap_low = np.array([-0.2, 0.5, 0.06, -1.0, -1.0, -1.0, -1.0])
-    mocap_high = np.array([0.2, 0.7, 0.6, 1.0, 1.0, 1.0, 1.0])
-    metadata = {
-        "render_modes": [
-            "human",
-            "rgb_array",
-            "depth_array",
-        ],
-        "render_fps": 80,
-    }
-
     @cached_property
     def sawyer_observation_space(self) -> Space:
         raise NotImplementedError
@@ -239,19 +228,21 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
             self.model, self.data
         )  # *** DO NOT REMOVE: EZPICKLE WON'T WORK *** #
         
-        self._did_see_sim_exception: bool = False
-        self.init_left_pad: npt.NDArray[Any] = self.get_body_com("leftpad")
-        self.init_right_pad: npt.NDArray[Any] = self.get_body_com("rightpad")
+        # self.action_space = Box(  # type: ignore
+        #     np.array([-1, -1, -1, -1, -1, -1, -1, -1]),
+        #     np.array([+1, +1, +1, +1, +1, +1, +1, +1]),
+        #     dtype=np.float32,
+        # )
 
         self.action_space = Box(  # type: ignore
-            np.array([-1, -1, -1, -1, -1, -1, -1, -1]),
-            np.array([+1, +1, +1, +1, +1, +1, +1, +1]),
+            np.array([-1, -1, -1, -1]),
+            np.array([+1, +1, +1, +1]),
             dtype=np.float32,
         )
 
         self.hand_init_pos: npt.NDArray[Any] | None = None  # OVERRIDE ME
         self.hand_init_quat: npt.NDArray[Any] | None = None  # OVERRIDE ME
-        self._target_pos: npt.NDArray[Any] | None = None  # OVERRIDE ME
+        self._goal_pos: npt.NDArray[Any] | None = None  # OVERRIDE ME
         self._random_reset_space: Box | None = None  # OVERRIDE ME
         self.goal_space: Box | None = None  # OVERRIDE ME
         self._last_stable_obs: npt.NDArray[np.float64] | None = None
@@ -265,8 +256,6 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         self.init_qpos = np.copy(self.data.qpos)
         self.init_qvel = np.copy(self.data.qvel)
         self._prev_obs = np.zeros(28, dtype=np.float64)
-
-        self.task_name = self.__class__.__name__
 
         EzPickle.__init__(
             self,
@@ -345,12 +334,12 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         )
         self.data.mocap_pos = new_mocap_pos
         
-        r_increment = Rotation.from_quat(action[3:7])
+        # r_increment = Rotation.from_quat(action[3:7])
         
-        current_mocap = self.data.mocap_quat[0]
-        new_mocap_r = r_increment * Rotation.from_quat(current_mocap[[1,2,3,0]])
-        new_mocap_quat = new_mocap_r.as_quat()[[3,0,1,2]]
-        self.data.mocap_quat[0] = new_mocap_quat
+        # current_mocap = self.data.mocap_quat[0]
+        # new_mocap_r = r_increment * Rotation.from_quat(current_mocap[[1,2,3,0]])
+        # new_mocap_quat = new_mocap_r.as_quat()[[3,0,1,2]]
+        # self.data.mocap_quat[0] = new_mocap_quat
 
     def _set_obj_xyz(self, pos: npt.NDArray[Any]) -> None:
         """Sets the position of the object.
@@ -361,7 +350,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         qpos = self.data.qpos.flat.copy()
         qvel = self.data.qvel.flat.copy()
         qpos[9:12] = pos.copy() # 前 9 个分别对应 7 个关节角度和 2 个夹爪的控制量
-        qvel[9:15] = 0
+        qvel[9:15] = 0  # 一个刚体在空间中有 6 个自由度的速度：3 个线速度（dx, dy, dz）和 3 个角速度（ωx, ωy, ωz）。
         self.set_state(qpos, qvel)
 
     def _get_site_pos(self, site_name: str) -> npt.NDArray[np.float64]:
@@ -390,8 +379,8 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
     @property
     def _target_site_config(self) -> list[tuple[str, npt.NDArray[Any]]]:
         """Retrieves site name(s) and position(s) corresponding to env targets."""
-        assert self._target_pos is not None
-        return [("goal", self._target_pos)]
+        assert self._goal_pos is not None
+        return [("goal", self._goal_pos)]
 
     @property
     def touching_main_object(self) -> bool:
@@ -472,9 +461,9 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         Returns:
             Flat array (3 elements) representing the goal position
         """
-        assert isinstance(self._target_pos, np.ndarray)
-        assert self._target_pos.ndim == 1
-        return self._target_pos
+        assert isinstance(self._goal_pos, np.ndarray)
+        assert self._goal_pos.ndim == 1
+        return self._goal_pos
 
     def _get_curr_obs_combined_no_goal(self) -> npt.NDArray[np.float64]:
 
@@ -519,6 +508,7 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         obs_obj_max_len = self._obs_obj_max_len
         obj_low = np.full(obs_obj_max_len, -np.inf, dtype=np.float64)
         obj_high = np.full(obs_obj_max_len, +np.inf, dtype=np.float64)
+        
         if self._partially_observable:
             goal_low = np.zeros(3)
             goal_high = np.zeros(3)
@@ -606,8 +596,8 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         Returns:
             The (next_obs, reward, terminated, truncated, info) tuple.
         """
-        assert len(action) == 8, f"Actions should be size 8, got {len(action)}"
-        self.set_xyz_action(action[:7]) # Pass position and rotation actions
+        assert len(action) == 4, f"Actions should be size 8, got {len(action)}"
+        self.set_xyz_action(action[:3]) # Pass position and rotation actions
         if self.curr_path_length >= self.max_path_length:
             raise ValueError("You must reset the env manually once truncate==True")
         self.do_simulation([action[-1], -action[-1]], n_frames=self.frame_skip)
@@ -618,23 +608,6 @@ class SawyerXYZEnv(SawyerMocapBase, EzPickle):
         for site in self._target_site_config:
             self._set_pos_site(*site)
 
-        if self._did_see_sim_exception:
-            assert self._last_stable_obs is not None
-            return (
-                self._last_stable_obs,  # observation just before going unstable
-                0.0,  # reward (penalize for causing instability)
-                False,  # termination flag always False
-                False,
-                {
-                    "success": False,
-                    "near_object": 0.0,
-                    "grasp_success": False,
-                    "grasp_reward": 0.0,
-                    "in_place_reward": 0.0,
-                    "obj_to_target": 0.0,
-                    "unscaled_reward": 0.0,
-                },
-            )
         mujoco.mj_forward(self.model, self.data)
         
         self._last_stable_obs = self._get_obs()

@@ -48,9 +48,8 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
 
         self.goal = np.array([-0.3, 0.6, 0.0])
 
-        self.obj_init_pos = np.array([0, 0.6, 0.02])
         self.hand_init_pos = np.array([0, 0.6, 0.2])
-        self.hand_init_quat = Rotation.from_euler('xyz', [0,45,0], degrees=True).as_quat()[[1, 2, 3, 0]]
+        self.hand_init_quat = Rotation.from_euler('xyz', [0,90,0], degrees=True).as_quat()[[1, 2, 3, 0]]
         
         self._random_reset_space = Box(
             np.hstack((obj_low, goal_low)),
@@ -58,12 +57,10 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
             dtype=np.float64,
         )
         self.goal_space = Box(
-            np.array(goal_low) + np.array([0.03, 0.0, 0.13]),
-            np.array(goal_high) + np.array([0.03, 0.0, 0.13]),
+            np.array(goal_low) + Rotation.from_euler('xyz', [0,0,box_raw], degrees=True).apply(np.array([0.03, 0.0, 0.13])),
+            np.array(goal_high) + Rotation.from_euler('xyz', [0,0,box_raw], degrees=True).apply(np.array([0.03, 0.0, 0.13])),
             dtype=np.float64,
         )
-
-        self.liftThresh = 0.11
 
     @property
     def model_name(self) -> str:
@@ -146,9 +143,9 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         self._set_obj_xyz(self.obj_init_pos)
         self.model.body("box").pos = pos_box
         self.model.body("box").quat = quat_box
-        self._target_pos = pos_box + Rotation.from_euler('xyz', [0,0,box_raw], degrees=True).apply(np.array([0.03, 0.0, 0.13]))
+        self._goal_pos = pos_box + Rotation.from_euler('xyz', [0,0,box_raw], degrees=True).apply(np.array([0.03, 0.0, 0.13]))
         
-        self.model.site("goal").pos = self._target_pos
+        self.model.site("goal").pos = self._goal_pos
 
         self.objHeight = self.get_body_com("peg").copy()[2]
                 
@@ -159,14 +156,14 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         self, obs: npt.NDArray[np.float64], action: npt.NDArray[np.float32]
     ) -> tuple[float, dict[str, Any]]:
         obj = obs[14:17]
-        assert self._target_pos is not None and self.obj_init_pos is not None        
+        assert self._goal_pos is not None and self.obj_init_pos is not None        
         tcp_open: float = obs[7] 
         tcp = self.tcp_center
                 
         tcp_to_obj = float(np.linalg.norm(obj - tcp))
         
         # 使用优化后的奖励计算
-        reward, stage_rewards = self.compute_reward(action, obj)
+        reward, stage_rewards = self.compute_reward_test(action, obj)
         
         # 获取插入信息
         insertion_info = self.get_insertion_info()
@@ -179,8 +176,8 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         )
         
         # 成功条件：插入深度达到目标
-        # success = float(insertion_info["insertion_depth"] >= 0.1)  # 5cm插入深度
-        success =  float(stage_rewards["approach"] == 1)
+        success = float(insertion_info["insertion_depth"] >= 0.1)  # 5cm插入深度
+        # success =  float(stage_rewards["approach"] == 1)
                     
         info = {
             "success": success,
@@ -192,7 +189,7 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
 
         return reward, info
 
-    def compute_reward(
+    def compute_reward_test(
         self, action: npt.NDArray[Any], obj: npt.NDArray[Any]
     ) -> tuple[float, dict[str, float]]:
         """
@@ -353,10 +350,10 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         }
 
         
-        # labels = ["App", "Grasp", "Align", "Insert", "Lat", "Long", "Depth"]
-        # values = [approach_reward, grasp_reward, alignment_reward, insertion_reward, lateral_distance, longitudinal_distance, insertion_depth]
-        # print(" ".join(f"{v:6.3f}" for v in values))
-        # print(" ".join(f"{l:^6}" for l in labels))  # 可选：打印标签行
+        labels = ["App", "Grasp", "Align", "Insert", "Lat", "Long", "Depth"]
+        values = [approach_reward, grasp_reward, alignment_reward, insertion_reward, lateral_distance, longitudinal_distance, insertion_depth]
+        print(" ".join(f"{v:6.3f}" for v in values))
+        print(" ".join(f"{l:^6}" for l in labels))  # 可选：打印标签行
 
         return total_reward, stage_rewards
 
