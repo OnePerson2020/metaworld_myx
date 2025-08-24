@@ -7,7 +7,7 @@ import numpy as np
 from gymnasium import Env
 from numpy.typing import NDArray
 
-from ppo_test.sawyer_xyz_env import SawyerXYZEnv
+from ppo_test.sawyer_peg_insertion_side_v4 import SawyerPegInsertionSideEnvV4
 from ppo_test.types import Task
 
 
@@ -106,7 +106,7 @@ class RandomTaskSelectWrapper(gym.Wrapper):
         sample_tasks_on_reset: bool = True,
     ):
         super().__init__(env)
-        self.unwrapped: SawyerXYZEnv
+        self.unwrapped: SawyerPegInsertionSideEnvV4
         self.tasks = tasks
         self.sample_tasks_on_reset = sample_tasks_on_reset
 
@@ -208,7 +208,7 @@ class AutoTerminateOnSuccessWrapper(gym.Wrapper):
     """A Gymnasium Wrapper to automatically output a termination signal when the environment's task is solved.
     That is, when the 'success' key in the info dict is True.
 
-    This is not the case by default in SawyerXYZEnv, because terminating on success during training leads to
+    This is not the case by default in SawyerPegInsertionSideEnvV4, because terminating on success during training leads to
     instability and poor evaluation performance. However, this behaviour is desired during said evaluation.
     Hence the existence of this wrapper.
 
@@ -301,7 +301,7 @@ class CheckpointWrapper(gym.Wrapper):
         self.env.load_checkpoint(my_ckpt)
 
 
-def get_env_rng_checkpoint(env: SawyerXYZEnv) -> dict[str, dict]:
+def get_env_rng_checkpoint(env: SawyerPegInsertionSideEnvV4) -> dict[str, dict]:
     return {  # pyright: ignore [reportReturnType]
         "np_random_state": env.np_random.bit_generator.state,
         "action_space_rng_state": env.action_space.np_random.bit_generator.state,
@@ -310,7 +310,7 @@ def get_env_rng_checkpoint(env: SawyerXYZEnv) -> dict[str, dict]:
     }
 
 
-def set_env_rng(env: SawyerXYZEnv, state: dict[str, dict]) -> None:
+def set_env_rng(env: SawyerPegInsertionSideEnvV4, state: dict[str, dict]) -> None:
     assert "np_random_state" in state
     assert "action_space_rng_state" in state
     assert "obs_space_rng_state" in state

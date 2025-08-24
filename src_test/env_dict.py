@@ -13,19 +13,17 @@ import numpy as np
 from typing_extensions import TypeAlias
 
 # from metaworld import envs
-from ppo_test.sawyer_xyz_env import SawyerXYZEnv
-from ppo_test.sawyer_peg_insertion_side_v3 import SawyerPegInsertionSideEnvV3
-
+from ppo_test.sawyer_peg_insertion_side_v4 import SawyerPegInsertionSideEnvV4
 # Utils
 
-EnvDict: TypeAlias = "Typing_OrderedDict[str, type[SawyerXYZEnv]]"
+EnvDict: TypeAlias = "Typing_OrderedDict[str, type[SawyerPegInsertionSideEnvV4]]"
 TrainTestEnvDict: TypeAlias = "Typing_OrderedDict[Literal['train', 'test'], EnvDict]"
 EnvArgsKwargsDict: TypeAlias = (
     "Dict[str, Dict[Literal['args', 'kwargs'], Union[List, Dict]]]"
 )
 
 ENV_CLS_MAP = {
-    "peg-insert-side-v3": SawyerPegInsertionSideEnvV3,
+    "peg-insert-side-v4": SawyerPegInsertionSideEnvV4,
 }
 
 
@@ -170,7 +168,7 @@ def _create_observable_goal_envs(all_envs: EnvDict) -> EnvDict:
 
 ALL_V3_ENVIRONMENTS = _get_env_dict(
     [
-        "peg-insert-side-v3",
+        "peg-insert-side-v4",
     ]
 )
 

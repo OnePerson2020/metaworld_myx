@@ -4,10 +4,10 @@ import time
 import random
 import mujoco
 
-env_name = 'peg-insert-side-v3'
+env_name = 'peg-insert-side-v4'
 
 # env = metaworld.make_mt_envs(
-#     'peg-insert-side-v3',
+#     'peg-insert-side-v4',
 #     render_mode='human',
 #     width=1080,
 #     height=1920

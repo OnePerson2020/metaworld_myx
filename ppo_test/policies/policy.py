@@ -77,7 +77,7 @@ class Policy(abc.ABC):
         """
         raise NotImplementedError
 
-    @abc.abstractmethod
+    # @abc.abstractmethod
     def get_action(self, obs: npt.NDArray[np.float64]) -> npt.NDArray[np.float32]:
         """Gets an action in response to an observation.
 

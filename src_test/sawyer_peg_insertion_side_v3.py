@@ -14,7 +14,7 @@ from ppo_test.asset_path_utils import full_V3_path_for
 from ppo_test.sawyer_xyz_env import RenderMode, SawyerXYZEnv
 from ppo_test.utils import reward_utils
 
-box_raw = 17
+box_raw = 0
 quat_box = Rotation.from_euler('xyz', [0, 0, 90+box_raw], degrees=True).as_quat()[[3,0, 1, 2]]
 
 class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
@@ -49,7 +49,7 @@ class SawyerPegInsertionSideEnvV3(SawyerXYZEnv):
         self.goal = np.array([-0.3, 0.6, 0.0])
 
         self.hand_init_pos = np.array([0, 0.6, 0.2])
-        self.hand_init_quat = Rotation.from_euler('xyz', [0,90,0], degrees=True).as_quat()[[1, 2, 3, 0]]
+        self.hand_init_quat = Rotation.from_euler('xyz', [0,90,0], degrees=True).as_quat()[[3, 0, 1, 2]]
         
         self._random_reset_space = Box(
             np.hstack((obj_low, goal_low)),

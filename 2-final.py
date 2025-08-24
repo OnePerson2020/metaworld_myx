@@ -9,14 +9,14 @@ from collections import deque
 import mujoco
 
 from typing import Any, Tuple
-from scipy.spatial.transform import Rotation, Slerp
+from scipy.spatial.transform import Rotation
 
 from ppo_test.policies.action import Action
 from ppo_test.policies.policy import Policy, assert_fully_parsed
 
 # --- 全局变量用于暂停功能 ---
 is_paused = False
-d_raw = 17
+d_raw = 0
 
 def key_callback(key):
     """用于处理键盘输入的函数"""
@@ -86,7 +86,6 @@ class ActionVisualizer:
         plt.ioff()
         plt.close(self.fig)
 
-
 class CorrectedPolicyV2(Policy):
 
     def __init__(self):
@@ -109,7 +108,7 @@ class CorrectedPolicyV2(Policy):
         self.e_im = np.zeros(6)
         self.e_dot_im = np.zeros(6)
         self.ini_r = Rotation.from_euler('xyz', [0, 90, 0], degrees=True)
-
+    
     @staticmethod
     @assert_fully_parsed
     def _parse_obs(obs: npt.NDArray[np.float64]) -> dict[str, npt.NDArray[np.float64]]:
@@ -121,29 +120,9 @@ class CorrectedPolicyV2(Policy):
             "pegHead_torque": obs[11:14],       
             "peg_pos": obs[14:17],            
             "peg_rot": obs[17:21],            
-            "unused_info_curr_obs": obs[21:28],
-            "_prev_obs": obs[28:56],          
+            "_prev_obs": obs[21:42],          
             "goal_pos": obs[-3:],             
         }
-    
-    def get_action(self, obs: npt.NDArray[np.float64]) -> npt.NDArray[np.float32]:
-        
-        o_d = self._parse_obs(obs)
-        
-        desired_pos, desired_r = self._desired_pose(o_d)
-        delta_pos = self._calculate_pos_action(o_d["hand_pos"], to_xyz=desired_pos)
-        
-        delta_rot_euler = self._calculate_rotation_action(o_d["hand_quat"], desired_r)
-        gripper_effort = self._grab_effort(o_d)
-        
-        # if self.current_stage == 4 and np.linalg.norm(o_d["pegHead_force"]) > 5:
-        #     delta_pos, delta_rot_euler = self._pos_im(o_d["pegHead_force"], o_d["pegHead_torque"], delta_pos, delta_rot_euler)
-        
-        delta_rot = Rotation.from_euler('xyz', delta_rot_euler, degrees=True)
-        delta_rot_quat = delta_rot.as_quat()
-        action = Action(8)
-        action.set_action(np.hstack((delta_pos, delta_rot_quat, gripper_effort)))
-        return action.array.astype(np.float32)
 
     def _desired_pose(self, o_d: dict[str, npt.NDArray[np.float64]]) -> Tuple[npt.NDArray[Any], npt.NDArray[Any]]:
         pos_curr, pos_peg, pos_hole, gripper_distance = o_d["hand_pos"], o_d["peg_pos"], o_d["goal_pos"], o_d["gripper_distance_apart"]
@@ -233,12 +212,10 @@ class CorrectedPolicyV2(Policy):
         return peg_tip_pos
 
 if __name__ == "__main__":
-    env_name = 'peg-insert-side-v3'
-    env_class = ppo_test.env_dict.ALL_V3_ENVIRONMENTS[env_name]
-    env = env_class(render_mode='human', width=1000, height=720)
+
+    env = ppo_test.make_env(render_mode='human',seed=42, print_falg = True, pos_action_scale = 1)
     
-    
-    benchmark = ppo_test.MT1(env_name)
+    # benchmark = ppo_test.MT1(env_name)
     policy = CorrectedPolicyV2()
     
     IS_VISUALIZER_ENABLED = False 
@@ -255,8 +232,8 @@ if __name__ == "__main__":
     num_episodes = 3
     for i in range(num_episodes):
         print(f"\n--- Episode {i+1}/{num_episodes} ---")
-        task = random.choice(benchmark.train_tasks)
-        env.set_task(task)
+        # task = random.choice(benchmark.train_tasks)
+        # env.set_task(task)
         
         obs, info = env.reset()
         policy.reset()
@@ -297,8 +274,8 @@ if __name__ == "__main__":
 
             delta_rot = Rotation.from_euler('xyz', delta_rot_euler, degrees=True)
             delta_rot_quat = delta_rot.as_quat()
-            action = Action(8)
-            action.set_action(np.hstack((delta_pos, delta_rot_quat, gripper_effort)))
+            action = Action(4)
+            action.set_action(np.hstack((delta_pos, gripper_effort)))
             obs, reward, terminated, truncated, info = env.step(action.array.astype(np.float32))
             force = info.get('pegHead_force', np.zeros(3))
             force_magnitude = np.linalg.norm(force)
@@ -325,14 +302,6 @@ if __name__ == "__main__":
     df = pd.DataFrame(all_force_data)
     df.to_csv("force_analysis.csv", index=False)
     print("\nForce analysis data saved to force_analysis.csv")
-
-    try:
-        from visualize_forces import visualize_force_data
-        visualize_force_data("force_analysis.csv")
-    except ImportError:
-        print("Skipping force visualization: 'visualize_forces.py' not found.")
-    except Exception as e:
-        print(f"An error occurred during force visualization: {e}")
 
     print("\nSimulation finished. Close the plot window to exit.")
     if IS_VISUALIZER_ENABLED:

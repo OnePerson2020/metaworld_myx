@@ -178,7 +178,7 @@ if __name__ == "__main__":
     }
     
     try:
-        env = create_camera_wrapper('peg-insert-side-v3', camera_config)
+        env = create_camera_wrapper('peg-insert-side-v4', camera_config)
         
         from ppo_test.policies import SawyerPegInsertionSideV3Policy
         policy = SawyerPegInsertionSideV3Policy()
