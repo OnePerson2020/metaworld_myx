@@ -9,7 +9,7 @@ from typing_extensions import TypeAlias, TypedDict
 
 class Task(NamedTuple):
     env_name: str
-    data: bytes  # Contains env parameters like random_init and *a* goal
+    data: bytes
 
 RenderMode: TypeAlias = "Literal['human', 'rgb_array', 'depth_array']"
 

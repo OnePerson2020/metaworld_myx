@@ -12,8 +12,7 @@ import numpy.typing as npt
 from gymnasium.envs.mujoco.mujoco_env import MujocoEnv as mjenv_gym
 from gymnasium.spaces import Space
 
-from ppo_test.types import EnvironmentStateDict
-
+from ppo_test.types import EnvironmentStateDict, RenderMode
 
 
 class SawyerMocapBase(mjenv_gym):

@@ -3,6 +3,8 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv
+
 import ppo_test
 
 # --- 1. 设置命令行参数解析 ---
@@ -25,6 +27,7 @@ else:
 
 # --- 3. 加载训练好的模型 ---
 model_path = "models/best_model.zip"
+stats_path = "models/vec_normalize.pkl"
 try:
     model = PPO.load(model_path)
     print(f"从 {model_path} 加载模型成功！")
@@ -34,12 +37,26 @@ except FileNotFoundError:
 
 # --- 4. 创建评估环境 ---
 MAX_STEPS = 200
-env = ppo_test.make_env(
+eval_env_raw = ppo_test.make_env(
     seed=999,
     render_mode="human",
     max_steps=MAX_STEPS,
-    print_falg=True
+    print_flag=True
 )
+
+# 使用加载的统计数据封装环境
+try:
+    eval_env_vec = DummyVecEnv([lambda: eval_env_raw])
+
+    # 现在传入向量化后的环境
+    env = VecNormalize.load(stats_path, eval_env_vec)
+    print(f"从 {stats_path} 加载归一化统计数据成功！")
+    
+    env.training = False
+    env.norm_reward = False
+except FileNotFoundError:
+    print(f"错误: 找不到归一化文件 {stats_path}，请先完整运行 train_rl.py。")
+    exit()
 
 # --- 5. 运行评估 ---
 num_episodes = 10
@@ -47,7 +64,7 @@ success_count = 0
 
 for ep in range(num_episodes):
     print(f"\n=== 开始评估第 {ep+1}/{num_episodes} 局 ===")
-    obs, _ = env.reset()
+    obs = env.reset()
 
     # 如果开启绘图，则重置数据
     if args.plot:
@@ -57,7 +74,7 @@ for ep in range(num_episodes):
         history_rewards.clear()
 
     # 调整摄像机
-    mujoco_env = env.unwrapped
+    mujoco_env = env.envs[0] 
     if hasattr(mujoco_env, 'mujoco_renderer') and mujoco_env.mujoco_renderer.viewer:
         mujoco_env.mujoco_renderer.viewer.cam.azimuth = 245
         mujoco_env.mujoco_renderer.viewer.cam.elevation = -20
@@ -70,15 +87,17 @@ for ep in range(num_episodes):
         action, _ = model.predict(obs, deterministic=True)
         print(f"Step {step}, Action: {action}")
 
-        obs, reward, terminated, truncated, info = env.step(action)
-        episode_reward += reward
+        obs, reward, done, info = env.step(action)
+        original_obs = env.get_original_obs()
+        episode_reward += reward[0] 
+        info_dict = info[0]
 
         # --- 仅在开启绘图时记录数据和更新图表 ---
         if args.plot:
             # 记录数据
             history_steps.append(step)
             history_actions.append(action.copy())
-            history_obs.append(obs.copy())
+            history_obs.append(original_obs.copy())
             history_rewards.append(episode_reward)
 
             # 实时绘图更新
@@ -117,13 +136,12 @@ for ep in range(num_episodes):
         env.render()
 
         # 检查成功
-        if info.get("success", 0.0) > 0.5:
+        if info_dict.get("success", 0.0) > 0.5:
             print("✅ 成功插入 Peg！")
             success_count += 1
             time.sleep(1.5)
             break
 
-        done = terminated or truncated
         step += 1
 
     print(f"该局累计奖励: {episode_reward:.2f}")

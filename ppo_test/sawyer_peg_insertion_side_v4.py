@@ -62,7 +62,6 @@ class _Decorators:
         
 class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
     
-    pos_action_scale = 0.1  # 每步约 1cm
     max_path_length: int = 300
     """The maximum path length for the environment (the task horizon)."""
 
@@ -76,7 +75,7 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
         frame_skip: int = 5,
         mocap_low: XYZ | None = None,
         mocap_high: XYZ | None = None,
-        print_falg: bool = False,
+        print_flag: bool = False,
         pos_action_scale = 0.01,
     ) -> None:
 
@@ -119,7 +118,7 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
         self._partially_observable: bool = False
 
         self._set_task_called: bool = False
-        self.Print_falg = print_falg
+        self.print_flag = print_flag
         self.pos_action_scale = pos_action_scale
 
         super().__init__(
@@ -142,10 +141,11 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
             dtype=np.float32,
         )
 
-        self.init_qpos = np.copy(self.data.qpos)
-        self.init_qvel = np.copy(self.data.qvel)
         self._prev_obs = np.zeros(Len_observation, dtype=np.float64)
 
+        # 任务阶段初始化
+        self.task_phase = 'approach'
+        
         EzPickle.__init__(
             self,
             self.model_name,
@@ -182,49 +182,82 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
             ), "The goal space must be defined to use full observability"
             goal_low = self.goal_space.low
             goal_high = self.goal_space.high
+            
         gripper_low = -1.0
         gripper_high = +1.0
         
-        force_low = np.full(3, -np.inf, dtype=np.float64)
-        force_high = np.full(3, np.inf, dtype=np.float64)
+        force_low = np.full(3, -20, dtype=np.float64)
+        force_high = np.full(3, 20, dtype=np.float64)
 
-        torque_low = np.full(3, -np.inf, dtype=np.float64)
-        torque_high = np.full(3, np.inf, dtype=np.float64)
-        
+        torque_low = np.full(3, -20, dtype=np.float64)
+        torque_high = np.full(3, 20, dtype=np.float64)
+
+        # return Box(
+        #     np.hstack(
+        #         (
+        #             _HAND_POS_SPACE.low, 
+        #             gripper_low,
+        #             obj_low,
+        #             _HAND_POS_SPACE.low, 
+        #             gripper_low,
+        #             obj_low,
+        #             goal_low,
+        #         )
+        #     ),
+        #     np.hstack(
+        #         (
+        #             _HAND_POS_SPACE.high,
+        #             gripper_high,
+        #             obj_high,
+        #             _HAND_POS_SPACE.high,
+        #             gripper_high,
+        #             obj_high,
+        #             goal_high,
+        #         )
+        #     ),
+        #     dtype=np.float64,
+        # )
+            
         # Current observation: pos_hand (3) + quat_hand (4) + gripper_distance_apart (1) + pegHead_force (3) + pegHead_torque + obs_obj_padded (7) = 21
         # Goal: 3
         return Box(
             np.hstack(
                 (
+                    # Current obs (21)
                     _HAND_POS_SPACE.low, 
                     _HAND_QUAT_SPACE.low,
                     gripper_low,
                     force_low,
                     torque_low,
                     obj_low,
+                    # Previous obs (21)
                     _HAND_POS_SPACE.low, 
                     _HAND_QUAT_SPACE.low,
                     gripper_low,
                     force_low,
                     torque_low,
                     obj_low,
+                    # Goal (3)
                     goal_low,
                 )
             ),
             np.hstack(
                 (
+                    # Current obs (21)
                     _HAND_POS_SPACE.high,
                     _HAND_QUAT_SPACE.high,
                     gripper_high,
                     force_high,
                     torque_high,
                     obj_high,
+                    # Previous obs (21)
                     _HAND_POS_SPACE.high,
                     _HAND_QUAT_SPACE.high,
                     gripper_high,
                     force_high,
                     torque_high,
                     obj_high,
+                    # Goal (3)
                     goal_high,
                 )
             ),
@@ -249,18 +282,13 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
         return [seed]
 
     def set_task(self, task: Task) -> None:
-        """Sets the environment's task.
-
-        Args:
-            task: The task to set.
-        """
         self._set_task_called = True
         data = pickle.loads(task.data)
         assert isinstance(self, data["env_cls"])
         del data["env_cls"]
-        self._freeze_rand_vec = True
-        self._last_rand_vec = data["rand_vec"]
-        del data["rand_vec"]
+        self._freeze_rand_vec = data.get("freeze", False)
+        self.seeded_rand_vec = data.get("seeded_rand_vec", True)
+        self._last_rand_vec = data.get("rand_vec", None)
         self._partially_observable =  data["partially_observable"]
         del data["partially_observable"]
 
@@ -382,9 +410,10 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
         阶段3: 对准 hole
         阶段4: 插入
         """
-        tcp = obs[:3]  # 手爪位置
+        tcp = obs[:3]
         tcp_opened = obs[7]
-        obj = obs[14:17]  # peg 位置
+        obj = obs[14:17]
+        obj_z_pos = obj[2] # 获取 peg 的 Z 轴高度
 
         # 获取插入信息
         insertion_info = self.get_insertion_info()
@@ -395,33 +424,67 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
         # 初始化任务阶段状态
         if not hasattr(self, 'task_phase'):
             self.task_phase = 'approach'
+            
+        # --- 初始化所有阶段奖励 ---
+        approach_reward = 0.0
+        grasp_reward = 0.0
+        lift_reward = 0.0  # 新增
+        alignment_reward = 0.0
+        insertion_reward = 0.0
 
         # ---------------------------------
         # 阶段1: 接近 Peg
         # ---------------------------------
         tcp_to_obj = float(np.linalg.norm(obj - tcp))
-        approach_margin = float(np.linalg.norm(self.obj_init_pos - self.init_tcp))
-        approach_reward = reward_utils.tolerance(
-            tcp_to_obj,
-            bounds=(0.0, 0.015),
-            margin=approach_margin,
-            sigmoid="long_tail"
-        )
-
-        if tcp_to_obj < 0.025:
-            if self.task_phase == 'approach':
+        if self.task_phase == 'approach':
+            approach_margin = float(np.linalg.norm(self.obj_init_pos - self.init_tcp))
+            approach_reward = reward_utils.tolerance(
+                tcp_to_obj,
+                bounds=(0.0, 0.0),
+                margin=approach_margin,
+                sigmoid="long_tail"
+            )
+            # 转换条件: 足够近就准备抓取
+            if tcp_to_obj < 0.025:
                 self.task_phase = 'grasp'
-            close_ness = np.clip((1 - tcp_opened) / 0.65, 0.0, 1.0)
-            grasp_reward = reward_utils.hamacher_product(approach_reward, close_ness)
-            if self.task_phase == 'grasp':
-                if self.touching_main_object and tcp_to_obj < 0.02 and tcp_opened < 0.4: 
-                        self.task_phase = 'alignment'
-        else:
-            grasp_reward = 0.0
-
 
         # ---------------------------------
-        # 阶段3: 对准 Hole
+        # 阶段2: 抓取
+        # ---------------------------------
+        if self.task_phase == 'grasp':
+            close_ness = np.clip((1 - tcp_opened) / 0.65, 0.0, 1.0)
+            grasp_reward = reward_utils.tolerance(
+                tcp_to_obj,
+                bounds=(0.0, 0.02),
+                margin=0.2, # 给一个小的容忍边界
+                sigmoid="long_tail"
+            )
+            grasp_reward = reward_utils.hamacher_product(grasp_reward, close_ness)
+
+            # 转换条件: 接触到物体并且夹爪闭合
+            if self.touching_main_object and tcp_opened < 0.4: 
+                self.task_phase = 'lift' # *** 关键修改：转换到 lift 阶段，而不是 alignment ***
+        
+        # ---------------------------------
+        # 阶段3: 抬起 (新增)
+        # ---------------------------------
+        if self.task_phase == 'lift':
+            target_lift_height = self.obj_init_pos[2] + 0.07 # 目标抬起高度，比如比初始高7cm
+            lift_margin = 0.10 # 10cm 的奖励范围
+            
+            lift_reward = reward_utils.tolerance(
+                obj_z_pos,
+                bounds=(target_lift_height, target_lift_height + lift_margin),
+                margin=lift_margin,
+                sigmoid="long_tail"
+            )
+            
+            # 转换条件: 达到目标高度
+            if obj_z_pos >= target_lift_height - 0.01:
+                self.task_phase = 'alignment'
+        
+        # ---------------------------------
+        # 阶段4: 对准 Hole
         # ---------------------------------
         if self.task_phase == 'alignment':
             head_to_hole_init = self.peg_head_pos_init - self._goal_pos
@@ -442,7 +505,7 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
             longitudinal_alignment_margin = abs(float(np.dot(head_to_hole_init, hole_orientation)))
             longitudinal_alignment = reward_utils.tolerance(
                 longitudinal_distance,
-                bounds=(-0.15, 0.10),  # 纵向误差 -5cm ~ +10cm
+                bounds=(-0.15, 0.10),
                 margin=longitudinal_alignment_margin,
                 sigmoid="long_tail",
             )
@@ -450,57 +513,56 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
 
             if alignment_reward > 0.9:
                 self.task_phase = 'insertion'
-        elif self.task_phase == 'insertion':
-            alignment_reward = 1.0
-            
-        else:
-            alignment_reward = 0.0
-
-        # ---------------------------------
-        # 阶段4: 插入（平滑增长，去掉一次性 +10）
-        # ---------------------------------
-        insertion_reward = 0.0
+                
+        # 确保成功对准后，奖励保持为1
         if self.task_phase == 'insertion':
-            insertion_reward = insertion_depth / 0.04
-            # insertion_reward = reward_utils.tolerance(
-            #     insertion_depth,
-            #     bounds=(0.05, 0.10),   # 5~10cm 逐步递增
-            #     margin=0.08,
-            #     sigmoid="long_tail",
-            # )
-            if lateral_distance < 0.01:  # 插入时对准额外奖励（轻微）
+            alignment_reward = 1.0
+
+        # ---------------------------------
+        # 阶段5: 插入
+        # ---------------------------------
+        if self.task_phase == 'insertion':
+            # (这个阶段的逻辑可以保持不变)
+            insertion_reward = min(1.0, insertion_depth / 0.04) # 使用线性奖励
+            if lateral_distance < 0.01:
                 insertion_reward = min(1.0, insertion_reward + 0.2 * (1.0 - lateral_distance / 0.01))
-
+        
         # ---------------------------------
-        # 分阶段权重（更均衡，让“抓取+抬起”占更大比重）
+        # 总奖励计算
         # ---------------------------------
-        stage_weights = {
-            "approach": 1,
-            "grasp": 1,
-            "alignment": 1,
-            "insertion": 1,
+        # 让每个阶段的奖励更加独立，避免后续阶段的0奖励影响当前阶段
+        reward_by_phase = {
+            "approach": approach_reward,
+            "grasp": grasp_reward,
+            "lift": lift_reward,
+            "alignment": alignment_reward,
+            "insertion": insertion_reward,
         }
-
+        
+        # 简单的权重相加
         total_reward = (
-            stage_weights["approach"] * approach_reward +
-            stage_weights["grasp"] * grasp_reward +
-            stage_weights["alignment"] * alignment_reward +
-            stage_weights["insertion"] * insertion_reward
+            reward_by_phase.get("approach", 0) +
+            reward_by_phase.get("grasp", 0) +
+            reward_by_phase.get("lift", 0) +
+            reward_by_phase.get("alignment", 0) +
+            2 * reward_by_phase.get("insertion", 0) # 插入阶段给予更高权重
         )
-
+        
         # ---------------------------------
         # 调试信息
         # ---------------------------------
         stage_rewards = {
             "approach": float(approach_reward),
             "grasp": float(grasp_reward),
+            "lift": float(lift_reward),
             "alignment": float(alignment_reward),
             "insertion": float(insertion_reward),
             "insertion_depth": float(insertion_depth),
+            "obj_z_pos": float(obj_z_pos),
             "task_phase": self.task_phase,
         }
 
-        if self.Print_falg:
+        if self.print_flag:
             values = [approach_reward,
                     grasp_reward,
                     alignment_reward,
@@ -562,24 +624,6 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
         """
         return self.data.site(site_name).xpos.copy()
 
-    def _set_pos_site(self, name: str, pos: npt.NDArray[Any]) -> None:
-        """Sets the position of a given site.
-
-        Args:
-            name: The site's name
-            pos: Flat, 3 element array indicating site's location
-        """
-        assert isinstance(pos, np.ndarray)
-        assert pos.ndim == 1
-
-        self.data.site(name).xpos = pos[:3]
-
-    @property
-    def _target_site_config(self) -> list[tuple[str, npt.NDArray[Any]]]:
-        """Retrieves site name(s) and position(s) corresponding to env targets."""
-        assert self._goal_pos is not None
-        return [("goal", self._goal_pos)]
-
     @property
     def touching_main_object(self) -> bool:
         """Calls `touching_object` for the ID of the env's main object.
@@ -630,16 +674,6 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
 
         return 1 < leftpad_object_contact_force and 1 < rightpad_object_contact_force
 
-    def _get_pos_goal(self) -> npt.NDArray[Any]:
-        """Retrieves goal position from mujoco properties or instance vars.
-
-        Returns:
-            Flat array (3 elements) representing the goal position
-        """
-        assert isinstance(self._goal_pos, np.ndarray)
-        assert self._goal_pos.ndim == 1
-        return self._goal_pos
-
     def _get_curr_obs_combined_no_goal(self) -> npt.NDArray[np.float64]:
 
         pos_hand = self.tcp_center
@@ -655,7 +689,9 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
         obj_pos = self._get_pos_objects()
         obj_quat = self._get_quat_objects()
         pegHead_force, pegHead_torque = self.get_peghead_force_and_torque()
-
+        pegHead_force = np.tanh(pegHead_force / 10.0)
+        pegHead_torque = np.tanh(pegHead_torque / 1.0)
+        
         return np.hstack((pos_hand, quat_hand, gripper_distance_apart, pegHead_force, pegHead_torque, obj_pos, obj_quat))
 
     def _get_obs(self) -> npt.NDArray[np.float64]:
@@ -672,17 +708,19 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
         self, action: npt.NDArray[np.float32]
     ) -> tuple[npt.NDArray[np.float64], SupportsFloat, bool, bool, dict[str, Any]]:
         """Step the environment."""
-        # 位姿控制（位置 3 维 + 夹爪 1 维）
-        self.set_xyz_action(action[:-1])
+
         if self.curr_path_length >= self.max_path_length:
             raise ValueError("You must reset the env manually once truncate==True")
-        self.do_simulation([action[-1], -action[-1]], n_frames=self.frame_skip)
-        self.curr_path_length += 1
 
-        # 恢复目标 site 的位置
-        for site in self._target_site_config:
-            self._set_pos_site(*site)
-        mujoco.mj_forward(self.model, self.data)
+        # 位姿控制（位置 3 维 + 夹爪 1 维）
+        self.set_xyz_action(action[:-1])
+        
+        u = float(np.clip(action[-1], -1, 1))
+        r_ctrl = 0.02 + 0.02 * u        # 映射到 [0, 0.04]
+        l_ctrl = -0.015 - 0.015 * u     # 映射到 [-0.03, 0]
+        self.do_simulation([r_ctrl, l_ctrl], n_frames=self.frame_skip)
+
+        self.curr_path_length += 1
 
         # 观测裁剪
         self._last_stable_obs = self._get_obs()
@@ -693,13 +731,15 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
         ).astype(np.float64)
 
         # 奖励与信息
-        assert isinstance(self._last_stable_obs, np.ndarray)
         reward, info = self.evaluate_state(self._last_stable_obs)
 
-        # 成功即结束（可配）
+        # 成功判定
         terminated = False
-        if bool(info.get("success", 0.0)):
+        if info.get("stage_rewards", {}).get("insertion_depth", 0) >= 0.04:
             terminated = True
+            info["success"] = 1.0
+        else:
+            info["success"] = 0.0
 
         truncated = (self.curr_path_length == self.max_path_length)
 
@@ -717,16 +757,12 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
         while np.linalg.norm(pos_peg[:2] - pos_box[:2]) < 0.1:
             pos_peg, pos_box = np.split(self._get_state_rand_vec(), 2)
         self.obj_init_pos = pos_peg
-        self.peg_head_pos_init = self._get_site_pos("pegHead")
         self._set_obj_xyz(self.obj_init_pos)
+        self.peg_head_pos_init = self._get_site_pos("pegHead")
         self.model.body("box").pos = pos_box
         self.model.body("box").quat = quat_box
         self._goal_pos = pos_box + Rotation.from_euler('xyz', [0,0,box_raw], degrees=True).apply(np.array([0.03, 0.0, 0.13]))
-        
         self.model.site("goal").pos = self._goal_pos
-
-        self.pegHeight = self.get_body_com("peg").copy()[2]
-        self.task_phase = 'approach'
 
         return self._get_obs()
 
@@ -743,10 +779,11 @@ class SawyerPegInsertionSideEnvV4(SawyerMocapBase, EzPickle):
             The `(obs, info)` tuple.
         """
         self.curr_path_length = 0
-        self.reset_model()
-        obs, info = super().reset()
-        assert obs is not None, "Observation should not be None after reset"
-        self._prev_obs = obs[:Len_observation].copy()        
+        _, info = super().reset(seed=seed, options=options)
+        initial_obs_curr = self._get_curr_obs_combined_no_goal()
+        self._prev_obs = initial_obs_curr.copy() 
+        pos_goal = self._goal_pos
+        obs = np.hstack((initial_obs_curr, self._prev_obs, pos_goal))
         return obs, info
 
     def _reset_hand(self, steps: int = 50) -> None:
