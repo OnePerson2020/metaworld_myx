@@ -28,6 +28,3 @@ MUJOCO_LOG.TXT
 
 # no submodules, please
 .gitmodules
-
-logs/
-models/
